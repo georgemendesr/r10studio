@@ -4,10 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { PlusIcon, TrashIcon, UploadIcon, PlayIcon, KeyboardIcon, EyeIcon, PauseIcon, VolumeXIcon } from "lucide-react";
+import { PlusIcon, TrashIcon, UploadIcon, PlayIcon, PauseIcon, AlignLeft, AlignCenter, AlignRight, ArrowUp, ArrowDown, Clock } from "lucide-react";
 import { toast } from "sonner";
 import PunchZoomYoYo from "@/components/PunchZoomYoYo";
-import WatermarkSettings from "@/components/WatermarkSettings";
 import { v4 as uuidv4 } from "uuid";
 
 interface Slide {
@@ -52,6 +51,10 @@ const VideoSlidePage = () => {
   // Estados para controle de prévia de áudio
   const [currentPreviewAudio, setCurrentPreviewAudio] = useState<HTMLAudioElement | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState<string | null>(null);
+  // UI: miniaturas compactas
+  const [compactView, setCompactView] = useState<boolean>(true);
+  const [bulkEffectValue, setBulkEffectValue] = useState<string>('ALEATORIO');
+  const [bulkTextValue, setBulkTextValue] = useState<string>('');
 
   // Carregar configurações permanentes do localStorage
   useEffect(() => {
@@ -580,12 +583,13 @@ const VideoSlidePage = () => {
       // Configurar MediaRecorder para capturar o canvas + áudio se houver trilha
       const FRAME_RATE = 30;
       const FRAME_MS = 1000 / FRAME_RATE; // 33.333ms exatos
-      const stream = canvas.captureStream(FRAME_RATE);
-      const videoTrack = (stream.getVideoTracks()[0] as any);
-      const requestFrameIfSupported = () => {
+  const stream = canvas.captureStream(FRAME_RATE);
+  const videoTrack = (stream.getVideoTracks()[0] as any);
+  const requestFrameIfSupported = () => {
         try { if (videoTrack && typeof videoTrack.requestFrame === 'function') videoTrack.requestFrame(); } catch {}
       };
-      const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+  // Utilitário de espera
+  const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
       
       // Criar audio context para mixer de áudio se houver trilha sonora
       let audioContext: AudioContext | null = null;
@@ -897,9 +901,11 @@ const VideoSlidePage = () => {
           totalTextLength = textLines.join('').replace(/\s/g, '').length; // CORRIGIDO: só letras para animação
         }
 
-  for (let frame = 0; frame < totalFrames; frame++) {
-          // Timing baseado em frame real, não setTimeout
-          const elapsedMs = (frame / FRAME_RATE) * 1000;
+        const slideStart = Date.now();
+        for (let frame = 0; frame < totalFrames; frame++) {
+          // Timing: baseado em tempo real e alvo de 30fps
+          const targetMs = frame * FRAME_MS;
+          const elapsedMs = Math.max(0, Date.now() - slideStart);
           
           // Limpar canvas
           ctx.fillStyle = '#000000';
@@ -990,15 +996,17 @@ const VideoSlidePage = () => {
             const rectHeight = fontSize + padY * 2;
 
             const totalH = textLines.length * lineHeight;
-            let y = canvas.height - 200 - totalH; // topo do bloco de texto
+            // Subir conjunto (barra + texto) aproximadamente 270px
+            let y = canvas.height - (200 + 270) - totalH; // topo do bloco de texto mais alto
 
             // 1) Linha amarela animada (antes do texto)
-            const preLineDurationMs = 500; // 0.5s
+            const preLineDurationMs = 250; // mais rápida (0.25s)
             const preLineProgress = Math.min(1, elapsedMs / preLineDurationMs);
             const yellowWidthTarget = 100; // largura fixa 100px
             const yellowWidth = Math.floor(yellowWidthTarget * preLineProgress);
             const yellowHeight = 15; // altura fixa 15px
-            const yellowY = y - Math.round(fontSize * 0.5); // acima do texto proporcional à fonte
+            // Subir a barra amarela ~20px acima do que estava
+            const yellowY = y - Math.round(fontSize * 0.5) - 20; // acima do texto proporcional + 20px
             if (yellowWidth > 0) {
               ctx.fillStyle = '#eebe32';
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
@@ -1007,7 +1015,8 @@ const VideoSlidePage = () => {
             // 2) Texto (typewriter) inicia após a linha completar
             const typewriterStartDelayMs = preLineDurationMs;
             const elapsedForText = Math.max(0, elapsedMs - typewriterStartDelayMs);
-            const typewriterDurationMs = Math.max(1000, durationSec * 1000 * 0.3);
+            // Rápido: entre 400ms e 900ms, ou 20% da duração
+            const typewriterDurationMs = Math.min(900, Math.max(400, durationSec * 1000 * 0.2));
             const progress = Math.min(1, elapsedForText / typewriterDurationMs);
 
             // Calcular caracteres a mostrar
@@ -1042,10 +1051,10 @@ const VideoSlidePage = () => {
             }
           }
 
-          // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo)
+          // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo) e mais visível
           if (watermarkImg) {
-            const margin = 30;
-            const wmTargetWidth = 120; // Menor para não atrapalhar
+            const margin = 28;
+            const wmTargetWidth = 220; // maior para visibilidade conforme referência
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
@@ -1054,14 +1063,17 @@ const VideoSlidePage = () => {
             const x = canvas.width - wmW - margin;
             const y = margin;
             
-            ctx.globalAlpha = 0.8; // Mais visível
+            ctx.globalAlpha = 0.9; // Mais visível
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
           }
           
-          // Sinalizar frame ao track (quando suportado) e temporizar 30fps
+          // Sinalizar frame ao track (quando suportado) para capturar frame
           requestFrameIfSupported();
-          await sleep(FRAME_MS);
+          // Pacing para 30fps
+          const now = Date.now() - slideStart;
+          const delay = Math.max(0, targetMs - now);
+          if (delay > 0) await sleep(delay);
         }
       }
       
@@ -1083,7 +1095,8 @@ const VideoSlidePage = () => {
           }
         }
         
-        for (let frame = 0; frame < vinheteFrames; frame++) {
+  const vinheteStart = Date.now();
+  for (let frame = 0; frame < vinheteFrames; frame++) {
           // Limpar canvas
           ctx.fillStyle = '#000000';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1136,29 +1149,22 @@ const VideoSlidePage = () => {
           // Adicionar watermark também na vinheta
           if (watermarkImg) {
             const margin = 40;
-            const wmTargetWidth = 180;
+            const wmTargetWidth = 220;
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
-
-            let x = margin;
-            let y = canvas.height - wmH - margin;
-            if (watermark.position === 'top-left') {
-              x = margin; y = margin;
-            } else if (watermark.position === 'top-right') {
-              x = canvas.width - wmW - margin; y = margin;
-            } else if (watermark.position === 'bottom-left') {
-              x = margin; y = canvas.height - wmH - margin;
-            } else if (watermark.position === 'bottom-right') {
-              x = canvas.width - wmW - margin; y = canvas.height - wmH - margin;
-            }
+            const x = canvas.width - wmW - margin;
+            const y = margin;
             ctx.globalAlpha = 0.6;
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
           }
 
           requestFrameIfSupported();
-          await sleep(FRAME_MS);
+          const now = Date.now() - vinheteStart;
+          const targetMs = frame * FRAME_MS;
+          const delay = Math.max(0, targetMs - now);
+          if (delay > 0) await sleep(delay);
         }
         
         // Parar vídeo da vinheta se estava rodando
@@ -1195,39 +1201,27 @@ const VideoSlidePage = () => {
       {/* Header com Logo R10 STUDIO */}
       <div className="text-center space-y-6">
         <div className="flex justify-center">
-          <img 
-            src="/logor10studiob.png" 
-            alt="R10 STUDIO" 
-            className="h-32 object-contain"
-          />
+          <img src="/logor10studiob.png" alt="R10 STUDIO" className="h-24 object-contain" />
         </div>
         <div className="flex justify-center">
-          <WatermarkSettings
-            onWatermarkChange={handleWatermarkChange}
-            onVinheteChange={handleVinheteChange}
-          />
+        {/* Settings de watermark/vinheta não exibidos no editor para manter fluxo limpo */}
         </div>
       </div>
 
-      {/* Título */}
+      {/* Título (compacto) */}
       <Card>
-        <CardHeader>
-          <CardTitle>Título do Vídeo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              autoResize(e.target);
-            }}
-            placeholder="Ex: Prefeitura anuncia nova obra no centro da cidade"
-            className="text-lg min-h-[50px] resize-none font-archivo font-semibold"
-          />
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-3">
+            <Label className="text-xs text-muted-foreground">Título</Label>
+            <Input
+              value={title}
+              onChange={(e)=>setTitle(e.target.value)}
+              placeholder="Opcional"
+              className="h-8 text-sm max-w-md"
+            />
+          </div>
         </CardContent>
       </Card>
-
-      {/* Slides Section */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -1237,9 +1231,7 @@ const VideoSlidePage = () => {
               }`}>2</div>
               Imagens da Reportagem ({slides.length}/20)
             </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Upload em lote otimizado: selecione múltiplas imagens de uma vez
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">Selecione múltiplas imagens de uma vez</p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -1269,6 +1261,56 @@ const VideoSlidePage = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Toolbar: modo compacto, aplicar efeito/texto para todos */}
+          {slides.length > 0 && (
+            <div className="sticky top-2 z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-3 p-3 border rounded-md bg-secondary/50 backdrop-blur">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="compact-view"
+                  checked={compactView}
+                  onChange={(e) => setCompactView(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <Label htmlFor="compact-view" className="text-sm">Modo compacto (miniaturas menores)</Label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  id="all-effect-select"
+                  value={bulkEffectValue}
+                  onChange={(e)=>setBulkEffectValue(e.target.value)}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  {zoomEffects.map(effect => (
+                    <option key={effect.value} value={effect.value}>{effect.label}</option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!bulkEffectValue) return;
+                    setSlides(prev => prev.map(s => ({ ...s, effect: bulkEffectValue as Slide['effect'] })));
+                    toast.success('Efeito aplicado a todos os slides');
+                  }}
+                >Aplicar efeito a todos</Button>
+                <input
+                  value={bulkTextValue}
+                  onChange={(e)=>setBulkTextValue(e.target.value)}
+                  placeholder="Texto para todos os slides"
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm w-64"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={()=>{
+                    setSlides(prev=>prev.map(s=>({ ...s, caption: bulkTextValue })));
+                    toast.success('Texto aplicado a todos os slides');
+                  }}
+                >Aplicar texto a todos</Button>
+              </div>
+            </div>
+          )}
           {slides.length === 0 ? (
             <div 
               className="text-center py-16 text-muted-foreground border-2 border-dashed border-orange-400/30 rounded-lg hover:border-orange-400/50 transition-colors bg-gradient-to-b from-orange-50/20 to-red-50/20"
@@ -1291,10 +1333,10 @@ const VideoSlidePage = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Slides Grid */}
-              <div className="grid gap-4">
+              {/* Slides Grid - compacto, em colunas responsivas */}
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 {slides.map((slide, index) => (
-                  <div key={slide.id} className="space-y-4 p-6 border border-border rounded-lg bg-secondary/20">
+                  <div key={slide.id} className="space-y-3 p-3 border border-border rounded-lg bg-secondary/20">
                     <div className="flex items-center justify-between">
                       <h3 className="font-semibold">Slide {index + 1}</h3>
                       <Button
@@ -1307,152 +1349,165 @@ const VideoSlidePage = () => {
                       </Button>
                     </div>
                     
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 gap-3">
                       {/* Image Upload */}
                       <div>
-                        <Label>Imagem</Label>
-                        <p className="text-xs text-muted-foreground mb-2">
-                          Qualquer formato será convertido para 1080x1920px (9:16)
-                        </p>
-                        <div className="mt-1">
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp"
+                          onChange={(e) => handleImageUpload(slide.id, e)}
+                          id={`image-${slide.id}`}
+                          className="hidden"
+                        />
+                        <div className="mt-1 space-y-2">
                           {slide.image ? (
-                            <div className="space-y-2">
-                              <PunchZoomYoYo 
-                                image={slide.image} 
-                                caption={slide.caption || "Preview"} 
-                                effect={slide.effect}
-                                textAnimation={slide.textAnimation}
-                                alignH={slide.alignH}
-                                alignV={slide.alignV}
-                              />
-                              <Button
-                                onClick={() => updateSlide(slide.id, 'image', '')}
-                                variant="outline"
-                                size="sm"
-                                className="w-full"
-                              >
-                                Alterar Imagem
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-orange-400/50 transition-colors"
-                              onDragOver={handleDragOver}
-                              onDragEnter={handleDragEnter}
-                              onDragLeave={handleDragLeave}
-                              onDrop={(e) => handleDrop(e, slide.id)}
-                            >
-                              <div className="w-16 h-28 mx-auto mb-3 border-2 border-dashed border-orange-400/50 rounded flex items-center justify-center">
-                                <span className="text-xs text-orange-400 transform -rotate-90">9:16</span>
+                            <>
+                              {compactView ? (
+                                <img
+                                  src={slide.image}
+                                  alt={`Slide ${index + 1}`}
+                                  className="w-full aspect-[9/16] object-cover rounded border"
+                                />
+                              ) : (
+                                <PunchZoomYoYo
+                                  image={slide.image}
+                                  caption={slide.caption || "Preview"}
+                                  effect={slide.effect}
+                                  textAnimation={slide.textAnimation}
+                                  alignH={slide.alignH}
+                                  alignV={slide.alignV}
+                                />
+                              )}
+                              <div>
+                                <Button asChild variant="outline" size="sm">
+                                  <label htmlFor={`image-${slide.id}`} className="cursor-pointer">
+                                    <UploadIcon className="w-4 h-4 mr-2" />
+                                    Trocar imagem
+                                  </label>
+                                </Button>
                               </div>
-                              <UploadIcon className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
-                              <p className="text-sm text-muted-foreground mb-1">
-                                Envie uma imagem (JPG, PNG, WEBP)
-                              </p>
-                              <p className="text-xs text-orange-400 mb-3">
-                                Será redimensionada para 1080x1920px
-                              </p>
-                              <p className="text-xs text-muted-foreground/70 mb-3">
-                                📂 Clique para selecionar ou arraste aqui
-                              </p>
-                              <input
-                                type="file"
-                                accept=".jpg,.jpeg,.png,.webp"
-                                onChange={(e) => handleImageUpload(slide.id, e)}
-                                className="hidden"
-                                id={`image-${slide.id}`}
-                              />
-                              <Button
-                                asChild
-                                variant="outline"
-                                size="sm"
-                              >
-                                <label htmlFor={`image-${slide.id}`} className="cursor-pointer">
-                                  <UploadIcon className="w-4 h-4 mr-2" />
-                                  Escolher Arquivo
-                                </label>
-                              </Button>
-                            </div>
+                            </>
+                          ) : (
+                            <Button asChild variant="outline" size="sm">
+                              <label htmlFor={`image-${slide.id}`} className="cursor-pointer">
+                                <UploadIcon className="w-4 h-4 mr-2" />
+                                Escolher Arquivo
+                              </label>
+                            </Button>
                           )}
                         </div>
                       </div>
 
-                      {/* Caption and Effect */}
-                      <div className="space-y-4">
+                      {/* Caption e controles */}
+                      <div className="space-y-3">
                         <div>
-                          <Label htmlFor={`caption-${slide.id}`}>
-                            Texto (opcional) - {slide.caption.length}/140
-                          </Label>
+                          <Label htmlFor={`caption-${slide.id}`} className="text-xs">Texto (opcional)</Label>
                           <Textarea
                             id={`caption-${slide.id}`}
                             value={slide.caption}
                             onChange={(e) => {
-                            updateSlide(slide.id, 'caption', e.target.value.slice(0, 140));
-                            autoResize(e.target);
-                          }}
-                          onInput={(e) => autoResize(e.target as HTMLTextAreaElement)}
-                          placeholder="Digite o texto da manchete (opcional)..."
-                          className="mt-1 min-h-[40px] resize-none overflow-hidden font-archivo text-animate-fade-in"
-                          maxLength={140}
-                          style={{ height: 'auto' }}
-                        />
+                              updateSlide(slide.id, 'caption', e.target.value.slice(0, 140));
+                              autoResize(e.target);
+                            }}
+                            onInput={(e) => autoResize(e.target as HTMLTextAreaElement)}
+                            placeholder="Digite o texto da manchete (opcional)..."
+                            className="mt-1 min-h-[40px] resize-none overflow-hidden font-archivo"
+                            maxLength={140}
+                            style={{ height: 'auto' }}
+                          />
                         </div>
-                        
-                        <div>
-                          <Label htmlFor={`effect-${slide.id}`}>Efeito de Zoom</Label>
-                          <select
-                            id={`effect-${slide.id}`}
-                            value={slide.effect}
-                            onChange={(e) => updateSlide(slide.id, 'effect', e.target.value as Slide['effect'])}
-                            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                          >
-                            {zoomEffects.map(effect => (
-                              <option key={effect.value} value={effect.value}>
-                                {effect.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 gap-3">
-                          <Label>Efeito do Texto</Label>
-                          <div className="text-sm text-muted-foreground">Digitando (typewriter)</div>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <Label>Duração (s)</Label>
+                        <div className="grid grid-cols-2 gap-2 items-end">
+                          <div>
+                            <Label htmlFor={`effect-${slide.id}`} className="text-xs">Efeito</Label>
+                            <select
+                              id={`effect-${slide.id}`}
+                              value={slide.effect}
+                              onChange={(e) => updateSlide(slide.id, 'effect', e.target.value as Slide['effect'])}
+                              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
+                            >
+                              {zoomEffects.map(effect => (
+                                <option key={effect.value} value={effect.value}>
+                                  {effect.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <Label className="text-xs flex items-center gap-1"><Clock className="w-3 h-3" /> Duração</Label>
+                            <div className="mt-1 flex items-center gap-2">
                               <input
                                 type="number"
                                 min={1}
                                 max={30}
                                 value={slide.durationSec ?? 5}
                                 onChange={(e) => updateSlide(slide.id, 'durationSec', Number(e.target.value))}
-                                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                                className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
                               />
+                              <span className="text-xs text-muted-foreground">s</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          <Label className="text-xs">Efeito do Texto</Label>
+                          <div className="text-sm text-muted-foreground">Digitando (typewriter)</div>
+                          <div className="grid grid-cols-2 gap-2 mt-1">
+                            <div>
+                              <Label className="text-xs">Alinhamento H</Label>
+                              <div className="mt-1 inline-flex rounded-md overflow-hidden border">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='left' ? 'bg-primary/10' : 'bg-background' }`}
+                                  title="Esquerda"
+                                  onClick={()=>updateSlide(slide.id, 'alignH', 'left')}
+                                >
+                                  <AlignLeft className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                  title="Centro"
+                                  onClick={()=>updateSlide(slide.id, 'alignH', 'center')}
+                                >
+                                  <AlignCenter className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='right' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                  title="Direita"
+                                  onClick={()=>updateSlide(slide.id, 'alignH', 'right')}
+                                >
+                                  <AlignRight className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                             <div>
-                              <Label>Alinh. H</Label>
-                              <select
-                                value={slide.alignH || 'center'}
-                                onChange={(e) => updateSlide(slide.id, 'alignH', e.target.value as NonNullable<Slide['alignH']>)}
-                                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                              >
-                                <option value="left">Esquerda</option>
-                                <option value="center">Centro</option>
-                                <option value="right">Direita</option>
-                              </select>
-                            </div>
-                            <div>
-                              <Label>Alinh. V</Label>
-                              <select
-                                value={slide.alignV || 'center'}
-                                onChange={(e) => updateSlide(slide.id, 'alignV', e.target.value as NonNullable<Slide['alignV']>)}
-                                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                              >
-                                <option value="top">Topo</option>
-                                <option value="center">Centro</option>
-                                <option value="bottom">Base</option>
-                              </select>
+                              <Label className="text-xs">Alinhamento V</Label>
+                              <div className="mt-1 inline-flex rounded-md overflow-hidden border">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='top' ? 'bg-primary/10' : 'bg-background' }`}
+                                  title="Topo"
+                                  onClick={()=>updateSlide(slide.id, 'alignV', 'top')}
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                  title="Centro"
+                                  onClick={()=>updateSlide(slide.id, 'alignV', 'center')}
+                                >
+                                  <AlignCenter className="w-4 h-4 rotate-90" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='bottom' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                  title="Base"
+                                  onClick={()=>updateSlide(slide.id, 'alignV', 'bottom')}
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
