@@ -1214,7 +1214,7 @@ const VideoSlidePage = () => {
       {/* Header com Logo R10 STUDIO */}
       <div className="text-center space-y-6">
         <div className="flex justify-center">
-          <img src="/logor10studiob.png" alt="R10 STUDIO" className="h-24 object-contain" />
+          <img src="/r10studio.png" alt="R10 STUDIO" className="h-24 object-contain" />
         </div>
         <div className="flex justify-center">
         {/* Settings de watermark/vinheta não exibidos no editor para manter fluxo limpo */}
