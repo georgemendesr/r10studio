@@ -154,7 +154,7 @@ const Videos = () => {
                   </Badge>
                 </div>
                 <div className="mt-1">
-                  <img src="/logor10studiob.png" alt="R10 STUDIO" className="h-5 w-auto opacity-80" />
+                  <img src="/r10studio.png" alt="R10 STUDIO" className="h-5 w-auto opacity-80" />
                 </div>
               </CardHeader>
               

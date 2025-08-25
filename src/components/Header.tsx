@@ -16,7 +16,7 @@ const Header = () => {
         {location.pathname !== "/video-slide" && (
           <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
             <img
-              src="/logor10studiob.png"
+              src="/r10studio.png"
               alt="R10 STUDIO"
               className="h-10 md:h-12 w-auto object-contain"
               loading="eager"

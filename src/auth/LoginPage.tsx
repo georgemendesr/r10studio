@@ -47,8 +47,8 @@ export default function LoginPage() {
 	return (
 		<div className="min-h-[80vh] flex items-center justify-center px-4">
 			<Card className="w-full max-w-sm">
-				<CardHeader className="space-y-2 text-center">
-					<img src="/logor10studiob.png" alt="R10 STUDIO" className="h-10 mx-auto" />
+					<CardHeader className="space-y-2 text-center">
+						<img src="/r10studio.png" alt="R10 STUDIO" className="h-10 mx-auto" />
 					<CardTitle className="text-base">Acesso restrito</CardTitle>
 				</CardHeader>
 				<CardContent>

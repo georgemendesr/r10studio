@@ -12,7 +12,7 @@ const Index = () => {
 						<div className="space-y-6">
 							  <h1 className="sr-only">R10 STUDIO</h1>
 										<img
-											src="/logor10studiob.png"
+											src="/r10studio.png"
 											alt="R10 STUDIO"
 											className="h-16 md:h-20 w-auto select-none drop-shadow-sm"
 											loading="eager"
