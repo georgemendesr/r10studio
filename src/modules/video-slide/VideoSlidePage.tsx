@@ -998,10 +998,11 @@ const VideoSlidePage = () => {
             const textLeft = SAFE_MARGIN;
             const barLeft = SAFE_MARGIN; // respeita margem de segurança
 
-            const lineHeight = Math.round(fontSize * 1.25);
             const padX = 20;
             const padY = Math.round(fontSize * 0.25); // altura do bloco acompanha o tamanho da fonte
             const rectHeight = fontSize + padY * 2;
+            const lineGap = Math.max(8, Math.round(fontSize * 0.1)); // separação mínima entre blocos
+            const lineHeight = rectHeight + lineGap;
 
             const totalH = textLines.length * lineHeight;
             // Subir conjunto (barra + texto) aproximadamente 270px
@@ -1038,10 +1039,11 @@ const VideoSlidePage = () => {
               let renderText = '';
               if (charsShown < totalCharsToShow) {
                 const charsInThisLine = Math.min(cleanLine.length, totalCharsToShow - charsShown);
-                const charProgress = charsInThisLine / cleanLine.length;
+                const charProgress = cleanLine.length === 0 ? 0 : (charsInThisLine / cleanLine.length);
                 const targetLength = Math.floor(line.length * charProgress);
                 renderText = line.slice(0, targetLength);
-                charsShown += cleanLine.length;
+                // Corrigido: acumular apenas os caracteres exibidos neste frame
+                charsShown += charsInThisLine;
               } else {
                 break;
               }
