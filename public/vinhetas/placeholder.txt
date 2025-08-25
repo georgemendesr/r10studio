@@ -1,0 +1,11 @@
+/* Este arquivo representa uma vinheta de exemplo.
+   Em um cenário real, você colocaria arquivos MP4 reais aqui.
+   
+   Para adicionar vinhetas reais:
+   1. Crie ou edite vídeos MP4 em 1080x1920 (vertical)
+   2. Salve com os nomes: r10-ending-default.mp4, r10-ending-news.mp4
+   3. Coloque nesta pasta /public/vinhetas/
+   4. Duração recomendada: 2-3 segundos
+   
+   O sistema irá detectar automaticamente e anexar ao final dos vídeos.
+*/

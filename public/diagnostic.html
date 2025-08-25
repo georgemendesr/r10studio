@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Diagnostics - R10 Studio</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px;
+            font-size: 16px;
+        }
+        .btn:hover {
+            background: #dc2626;
+        }
+        .console-output {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .success { background: #16a34a; color: white; }
+        .error { background: #dc2626; color: white; }
+        .info { background: #2563eb; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔧 R10 Studio - Video Diagnostics</h1>
+        <p>Ferramenta para diagnosticar problemas de renderização de vídeo</p>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 Testes Rápidos</h2>
+        <button class="btn" onclick="runCodecTest()">Testar Codecs</button>
+        <button class="btn" onclick="runRenderingTest()">Testar Renderização</button>
+        <button class="btn" onclick="runFullDiagnostic()">Diagnóstico Completo</button>
+        <button class="btn" onclick="clearOutput()">Limpar Console</button>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Status dos Codecs</h2>
+        <div id="codec-status">Clique em "Testar Codecs" para verificar...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>🖥️ Console de Diagnóstico</h2>
+        <div id="console" class="console-output">Aguardando testes...</div>
+    </div>
+
+    <script>
+        // Redirect console.log to our custom console
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        const consoleDiv = document.getElementById('console');
+
+        function addToConsole(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : '📝';
+            consoleDiv.innerHTML += `[${timestamp}] ${prefix} ${message}\n`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            addToConsole(args.join(' '), 'log');
+            originalConsoleLog.apply(console, args);
+        };
+
+        console.error = function(...args) {
+            addToConsole(args.join(' '), 'error');
+            originalConsoleError.apply(console, args);
+        };
+
+        function clearOutput() {
+            consoleDiv.innerHTML = 'Console limpo...\n';
+        }
+
+        async function runCodecTest() {
+            console.log('=== TESTE DE CODECS INICIADO ===');
+            
+            const tests = [
+                { mime: 'video/webm;codecs=vp8', name: 'VP8' },
+                { mime: 'video/webm;codecs=vp9', name: 'VP9' },
+                { mime: 'video/mp4;codecs=avc1.42E01E', name: 'H.264' },
+                { mime: 'video/webm', name: 'WebM Default' }
+            ];
+
+            let statusHTML = '<h3>Suporte a Codecs:</h3>';
+            
+            for (const test of tests) {
+                const supported = MediaRecorder.isTypeSupported(test.mime);
+                const status = supported ? '✅ Suportado' : '❌ Não suportado';
+                const statusClass = supported ? 'success' : 'error';
+                
+                console.log(`${test.name}: ${status}`);
+                statusHTML += `<div>${test.name}: <span class="status ${statusClass}">${status}</span></div>`;
+            }
+
+            document.getElementById('codec-status').innerHTML = statusHTML;
+            console.log('=== TESTE DE CODECS CONCLUÍDO ===');
+        }
+
+        async function runRenderingTest() {
+            console.log('=== TESTE DE RENDERIZAÇÃO INICIADO ===');
+            
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1080;
+                canvas.height = 1920;
+                const ctx = canvas.getContext('2d');
+                
+                console.log(`Canvas criado: ${canvas.width}x${canvas.height}`);
+                
+                // Configurar stream como no projeto
+                const stream = canvas.captureStream(30);
+                console.log(`Stream criado - Ativo: ${stream.active}`);
+                console.log(`Tracks de vídeo: ${stream.getVideoTracks().length}`);
+                
+                const mimeCandidates = [
+                    'video/mp4;codecs=avc1.42E01E',
+                    'video/webm;codecs=vp9',
+                    'video/webm;codecs=vp8',
+                    'video/webm'
+                ];
+                
+                const supportedMime = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m));
+                console.log(`MIME selecionado: ${supportedMime}`);
+                
+                if (!supportedMime) {
+                    console.error('❌ NENHUM CODEC SUPORTADO!');
+                    return;
+                }
+                
+                const recorder = new MediaRecorder(stream, {
+                    mimeType: supportedMime,
+                    videoBitsPerSecond: 50000000 // 50Mbps
+                });
+                
+                console.log('✅ MediaRecorder criado com sucesso');
+                
+                let chunks = [];
+                let frameCount = 0;
+                
+                recorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        chunks.push(event.data);
+                        console.log(`📦 Chunk recebido: ${event.data.size} bytes`);
+                    }
+                };
+                
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: supportedMime });
+                    console.log(`🎬 Vídeo final: ${blob.size} bytes (${(blob.size/1024/1024).toFixed(2)} MB)`);
+                    
+                    if (blob.size < 10000) {
+                        console.error('❌ VÍDEO MUITO PEQUENO! Problema de renderização detectado.');
+                    } else {
+                        console.log('✅ Tamanho do vídeo parece normal');
+                        
+                        // Criar URL para download
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `diagnostic_test_${Date.now()}.${supportedMime.includes('mp4') ? 'mp4' : 'webm'}`;
+                        a.click();
+                        console.log('💾 Vídeo de teste baixado');
+                    }
+                };
+                
+                recorder.onerror = (event) => {
+                    console.error('❌ Erro no MediaRecorder:', event.error);
+                };
+                
+                // Iniciar gravação
+                recorder.start(100); // Chunk a cada 100ms
+                console.log('🎬 Gravação iniciada');
+                
+                // Renderizar por 3 segundos
+                const startTime = Date.now();
+                const targetDuration = 3000; // 3 segundos
+                
+                const renderLoop = () => {
+                    const elapsed = Date.now() - startTime;
+                    frameCount++;
+                    
+                    // Desenhar frame animado
+                    const hue = (elapsed / 10) % 360;
+                    ctx.fillStyle = `hsl(${hue}, 70%, 30%)`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Texto dinâmico
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 64px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`Frame: ${frameCount}`, canvas.width/2, canvas.height/2);
+                    ctx.fillText(`Tempo: ${(elapsed/1000).toFixed(1)}s`, canvas.width/2, canvas.height/2 + 100);
+                    
+                    // Forçar captura (para captureStream(0))
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if (videoTrack && videoTrack.requestFrame) {
+                        videoTrack.requestFrame();
+                    }
+                    
+                    if (elapsed < targetDuration) {
+                        requestAnimationFrame(renderLoop);
+                    } else {
+                        recorder.stop();
+                        console.log(`🏁 Renderização concluída - ${frameCount} frames em ${(elapsed/1000).toFixed(1)}s`);
+                        console.log(`📊 Taxa de frames: ${(frameCount / (elapsed/1000)).toFixed(1)} FPS`);
+                    }
+                };
+                
+                renderLoop();
+                
+            } catch (error) {
+                console.error('❌ Erro no teste de renderização:', error);
+            }
+        }
+
+        async function runFullDiagnostic() {
+            console.log('🚀 INICIANDO DIAGNÓSTICO COMPLETO...');
+            await runCodecTest();
+            console.log('');
+            await runRenderingTest();
+            console.log('✅ DIAGNÓSTICO COMPLETO FINALIZADO');
+        }
+
+        // Auto-executar teste básico
+        window.onload = () => {
+            console.log('🔧 Ferramenta de Diagnóstico R10 Studio carregada');
+            console.log('Clique nos botões para executar os testes');
+        };
+    </script>
+</body>
+</html>

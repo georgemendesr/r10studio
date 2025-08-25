@@ -1,0 +1,10 @@
+/* Este arquivo representa uma trilha sonora de exemplo.
+   Em um cenário real, você colocaria arquivos MP3 reais aqui.
+   
+   Para adicionar trilhas sonoras reais:
+   1. Baixe ou crie arquivos MP3 
+   2. Salve com os nomes: news-tension.mp3, breaking-news.mp3, soft-news.mp3
+   3. Coloque nesta pasta /public/audios/
+   
+   O sistema irá detectar automaticamente e disponibilizar na interface.
+*/
