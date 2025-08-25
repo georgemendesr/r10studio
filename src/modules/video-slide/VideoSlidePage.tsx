@@ -881,7 +881,7 @@ const VideoSlidePage = () => {
         
   // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
         let textLines: string[] = [];
-        let totalTextLength = 0;
+        let totalCharsAll = 0;
         if (captionText) {
           const SAFE_MARGIN = 50; // margem de segurança em cada lado
           const baseFont = 48;
@@ -902,7 +902,7 @@ const VideoSlidePage = () => {
             }
           }
           if (current.trim()) textLines.push(current.trimEnd());
-          totalTextLength = textLines.join('').replace(/\s/g, '').length; // CORRIGIDO: só letras para animação
+          totalCharsAll = textLines.join('').length; // conta todos os caracteres (incluindo espaços)
         }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -910,7 +910,7 @@ const VideoSlidePage = () => {
   const POST_HOLD_MS = 600; // pequena pausa após texto completo
   // Duração do typewriter baseada no número de caracteres (suave, consistente)
   const CHAR_TIME_MS = 35; // ~28 chars/seg
-  const computedTypewriterMs = Math.max(800, Math.round(totalTextLength * CHAR_TIME_MS));
+  const computedTypewriterMs = Math.max(800, Math.round(totalCharsAll * CHAR_TIME_MS));
   const TYPEWRITER_DURATION_MS = computedTypewriterMs;
 
   // Slide deve durar pelo menos: barra + texto + hold final
@@ -1041,51 +1041,28 @@ const VideoSlidePage = () => {
             const typewriterDurationMs = TYPEWRITER_DURATION_MS;
             const progress = Math.min(1, elapsedForText / typewriterDurationMs);
 
-            // Calcular caracteres a mostrar (contagem global sem espaços)
-            const totalCharsToShow = Math.floor(totalTextLength * progress);
+            // Calcular caracteres a mostrar (contagem global incluindo espaços)
+            const totalCharsToShow = Math.floor(totalCharsAll * progress);
             let remaining = totalCharsToShow;
-
-            // Helper: encontra índice de corte na string original, revelando N chars não-espaço
-            const sliceIndexForVisible = (src: string, nonSpaceCount: number) => {
-              if (nonSpaceCount <= 0) return 0;
-              let count = 0;
-              for (let idx = 0; idx < src.length; idx++) {
-                const ch = src[idx];
-                if (!/\s/.test(ch)) {
-                  count++;
-                  if (count === nonSpaceCount) {
-                    return idx + 1; // inclui este caractere
-                  }
-                }
-              }
-              return src.length;
-            };
 
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
               const line = textLines[lineIndex];
-              const nonSpaceLen = line.replace(/\s+/g, '').length;
               if (remaining <= 0) break; // nada mais a mostrar
-              const showForLine = Math.min(nonSpaceLen, remaining);
-              const cutAt = sliceIndexForVisible(line, showForLine);
-              const renderText = line.slice(0, cutAt);
+              const showForLine = Math.min(line.length, remaining);
+              const renderText = line.slice(0, showForLine);
               remaining -= showForLine;
 
               if (renderText.trim()) {
-                // Garantir que o texto/retângulo não ultrapassem a margem direita
-        const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem
-                const allowedTextWidth = Math.max(0, maxRectWidth - padX * 2);
-                let fittedText = renderText;
-                while (fittedText && ctx.measureText(fittedText).width > allowedTextWidth) {
-                  fittedText = fittedText.slice(0, -1);
-                }
-                const textWidth = ctx.measureText(fittedText).width;
+                // Medir largura do texto atual e do retângulo
+                const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem direita
+                const textWidth = ctx.measureText(renderText).width;
                 const rectWidth = Math.min(textWidth + padX * 2, maxRectWidth);
                 ctx.fillStyle = '#cb403a';
                 ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
                 // Texto branco centralizado verticalmente no retângulo
                 ctx.fillStyle = '#ffffff';
-                if (fittedText) {
-                  ctx.fillText(fittedText, textLeft + padX, y - padY + rectHeight / 2);
+                if (renderText) {
+                  ctx.fillText(renderText, textLeft + padX, y - padY + rectHeight / 2);
                 }
               }
               y += lineHeight;
