@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,10 +9,10 @@ import { toast } from 'sonner';
 
 // Credenciais simples para ambiente interno
 const USERNAME = 'r10';
-const PASSWORD = '850327';
+const PASSWORD = '2025r10';
 
 export default function LoginPage() {
-	const { login } = useAuth();
+	const { login, user } = useAuth();
 	const navigate = useNavigate();
 	const location = useLocation() as any;
 	const from = location.state?.from?.pathname || '/video-slide';
@@ -20,6 +20,13 @@ export default function LoginPage() {
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
 	const [loading, setLoading] = useState(false);
+
+		// Já logado? Redireciona automaticamente
+		useEffect(() => {
+			if (user) {
+				navigate(from, { replace: true });
+			}
+		}, [user, from, navigate]);
 
 	const onSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();

@@ -1,9 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { VideoIcon, HomeIcon, PlusIcon } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/auth/AuthProvider";
+import { LogOut } from "lucide-react";
 
 const Header = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -22,7 +26,7 @@ const Header = () => {
         )}
 
         {/* Navegação - ajusta posição se não há logo */}
-        <nav className={`flex items-center gap-2 ${location.pathname === "/video-slide" ? "ml-auto" : ""}`}>
+  <nav className={`flex items-center gap-2 ${location.pathname === "/video-slide" ? "ml-auto" : ""}`}>
           <Button
             variant={location.pathname === "/" ? "default" : "ghost"}
             size="sm"
@@ -51,6 +55,17 @@ const Header = () => {
               Novo Vídeo
             </Link>
           </Button>
+
+          {user && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { logout(); navigate('/'); }}
+              title="Sair"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          )}
         </nav>
       </div>
     </header>
