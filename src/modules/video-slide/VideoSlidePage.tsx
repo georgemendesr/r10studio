@@ -1039,10 +1039,11 @@ const VideoSlidePage = () => {
             const typewriterStartDelayMs = preLineDurationMs; // texto só aparece após a barra
             const elapsedForText = Math.max(0, elapsedMs - typewriterStartDelayMs);
             const typewriterDurationMs = TYPEWRITER_DURATION_MS;
-            const progress = Math.min(1, elapsedForText / typewriterDurationMs);
-
-            // Calcular caracteres a mostrar (contagem global incluindo espaços)
-            const totalCharsToShow = Math.floor(totalCharsAll * progress);
+            // Contagem discreta: 1 caractere a cada CHAR_TIME_MS (mais estável visualmente)
+            const totalCharsToShow = Math.min(
+              totalCharsAll,
+              Math.floor(elapsedForText / CHAR_TIME_MS)
+            );
             let remaining = totalCharsToShow;
 
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
