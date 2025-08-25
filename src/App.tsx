@@ -5,6 +5,8 @@ import Videos from "@/pages/Videos";
 import NotFound from "@/pages/NotFound";
 import VideoSlidePage from "@/modules/video-slide/VideoSlidePage";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import RequireAuth from "@/auth/RequireAuth";
+import LoginPage from "@/auth/LoginPage";
 
 export default function App() {
 	return (
@@ -12,10 +14,10 @@ export default function App() {
 			<Header />
 			<main className="py-6">
 				<Routes>
-					<Route path="/" element={<Index />} />
+					<Route path="/" element={<LoginPage />} />
 					<Route path="/videos" element={<Videos />} />
 					{/* Editor principal: apenas SlidePage */}
-					<Route path="/video-slide" element={<VideoSlidePage />} />
+					<Route path="/video-slide" element={<RequireAuth><VideoSlidePage /></RequireAuth>} />
 					{/* Redirects antigos (se existirem bookmarks) */}
 					<Route path="/video/novo" element={<Navigate to="/video-slide" replace />} />
 					<Route path="*" element={<NotFound />} />
