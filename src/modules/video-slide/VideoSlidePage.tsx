@@ -868,19 +868,18 @@ const VideoSlidePage = () => {
 
   for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
-        const durationSec = Math.min(10, Math.max(3, slide.durationSec || 5)); // CORRIGIDO: duração máxima 10s
+        const durationSecInput = slide.durationSec || 5;
         const captionText = keepFirstCaption ? (slides[0]?.caption || '') : (slide.caption || '');
         const img = preloadedImages[i];
         
-        console.log(`🎬 Renderizando slide ${i + 1}/${slides.length} - Duração: ${durationSec}s`);
+  console.log(`🎬 Renderizando slide ${i + 1}/${slides.length} - Duração alvo: ${durationSecInput}s`);
         
-        // Efeito com timing preciso
-        const { durationMs, steps } = getEffectSpec(slide.effect || 'ALEATORIO');
-        const totalFrames = Math.max(1, Math.round(durationSec * FRAME_RATE)); // Frames exatos para duração
+  // Efeito com timing preciso
+  const { durationMs, steps } = getEffectSpec(slide.effect || 'ALEATORIO');
         
-        console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${durationSec}s a ${FRAME_RATE}fps)`);
+  // totalFrames é definido após o cálculo de durationMsEffective
         
-        // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
+  // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
         let textLines: string[] = [];
         let totalTextLength = 0;
         if (captionText) {
@@ -905,6 +904,20 @@ const VideoSlidePage = () => {
           if (current.trim()) textLines.push(current.trimEnd());
           totalTextLength = textLines.join('').replace(/\s/g, '').length; // CORRIGIDO: só letras para animação
         }
+
+  // Protocolo de garantia: tempos mínimos para animações
+  const BAR_DURATION_MS = 900; // animação suave da barra (~0.9s)
+  const POST_HOLD_MS = 600; // pequena pausa após texto completo
+  // Duração do typewriter baseada no número de caracteres (suave, consistente)
+  const CHAR_TIME_MS = 35; // ~28 chars/seg
+  const computedTypewriterMs = Math.max(800, Math.round(totalTextLength * CHAR_TIME_MS));
+  const TYPEWRITER_DURATION_MS = computedTypewriterMs;
+
+  // Slide deve durar pelo menos: barra + texto + hold final
+  const minRequiredMs = BAR_DURATION_MS + TYPEWRITER_DURATION_MS + POST_HOLD_MS;
+  const durationMsEffective = Math.max(durationSecInput * 1000, minRequiredMs);
+  const totalFrames = Math.max(1, Math.round(durationMsEffective / FRAME_MS));
+  console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${(durationMsEffective/1000).toFixed(2)}s a ${FRAME_RATE}fps)`);
 
         const slideStart = Date.now();
         for (let frame = 0; frame < totalFrames; frame++) {
@@ -1009,10 +1022,11 @@ const VideoSlidePage = () => {
             let y = canvas.height - (200 + 270) - totalH; // topo do bloco de texto mais alto
 
             // 1) Linha amarela animada (antes do texto)
-            const preLineDurationMs = 250; // mais rápida (0.25s)
-            const preLineProgress = Math.min(1, elapsedMs / preLineDurationMs);
-            const yellowWidthTarget = 100; // largura fixa 100px
-            const yellowWidth = Math.floor(yellowWidthTarget * preLineProgress);
+            const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+            const preLineDurationMs = BAR_DURATION_MS; // barra com easing e mais longa
+            const preLineProgress = easeOutCubic(Math.min(1, elapsedMs / preLineDurationMs));
+            const yellowWidthTarget = 100; // largura fixa 100px (padrão visual)
+            const yellowWidth = Math.max(0, Math.floor(yellowWidthTarget * preLineProgress));
             const yellowHeight = 15; // altura fixa 15px
             // Subir a barra amarela ~20px acima do que estava
             const yellowY = y - Math.round(fontSize * 0.5) - 20; // acima do texto proporcional + 20px
@@ -1022,10 +1036,9 @@ const VideoSlidePage = () => {
             }
 
             // 2) Texto (typewriter) inicia após a linha completar
-            const typewriterStartDelayMs = preLineDurationMs;
+            const typewriterStartDelayMs = preLineDurationMs; // texto só aparece após a barra
             const elapsedForText = Math.max(0, elapsedMs - typewriterStartDelayMs);
-            // Rápido: entre 400ms e 900ms, ou 20% da duração
-            const typewriterDurationMs = Math.min(900, Math.max(400, durationSec * 1000 * 0.2));
+            const typewriterDurationMs = TYPEWRITER_DURATION_MS;
             const progress = Math.min(1, elapsedForText / typewriterDurationMs);
 
             // Calcular caracteres a mostrar
@@ -1080,11 +1093,11 @@ const VideoSlidePage = () => {
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
 
-            // Posição: exatamente 40px das bordas superior/direita
-            const x = canvas.width - wmW - 40;
-            const y = 40;
+            // Posição: 100px das bordas (40 + 60 solicitados)
+            const x = canvas.width - wmW - 100; // mais ao meio
+            const y = 100; // mais abaixo
             
-            ctx.globalAlpha = 0.9; // Mais visível
+            ctx.globalAlpha = 0.3; // transparência suave (~30%)
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
             ctx.restore();
@@ -1176,9 +1189,9 @@ const VideoSlidePage = () => {
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
-            const x = canvas.width - wmW - 40; // 40px da direita
-            const y = 40; // 40px do topo
-            ctx.globalAlpha = 0.6;
+            const x = canvas.width - wmW - 100; // 100px da direita (40+60)
+            const y = 100; // 100px do topo (40+60)
+            ctx.globalAlpha = 0.3;
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
             ctx.restore();
