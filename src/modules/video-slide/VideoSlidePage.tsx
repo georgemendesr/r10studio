@@ -34,7 +34,12 @@ const VideoSlidePage = () => {
   const [useFade, setUseFade] = useState(false);
   const [keepFirstCaption, setKeepFirstCaption] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(true);
+  // Área protegida
+  const [protectedUnlocked, setProtectedUnlocked] = useState<boolean>(()=>{
+    try { return localStorage.getItem('r10-protected') === '1'; } catch { return false; }
+  });
+  const [protectedInput, setProtectedInput] = useState<string>("");
   
   // Estados para trilha sonora e vinheta
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -62,8 +67,12 @@ const VideoSlidePage = () => {
   const savedVinhete = localStorage.getItem('r10-vinhete');
   // Sempre usar a marca d'água oficial do portal, ignorando customizações
   const officialWatermark = '/logo-r10-piaui.png';
-  setWatermark(prev => ({ ...prev, file: officialWatermark }));
-  try { localStorage.setItem('r10-watermark', officialWatermark); } catch {}
+  if (!protectedUnlocked) {
+    setWatermark(prev => ({ ...prev, file: officialWatermark }));
+    try { localStorage.setItem('r10-watermark', officialWatermark); } catch {}
+  } else if (savedWatermark) {
+    setWatermark(prev => ({ ...prev, file: savedWatermark }));
+  }
     
     if (savedVinhete) {
       setVinheteUrl(savedVinhete);
@@ -74,6 +83,7 @@ const VideoSlidePage = () => {
   // Handlers para configurações permanentes
   const handleWatermarkChange = (file: string) => {
     setWatermark(prev => ({ ...prev, file }));
+    try { localStorage.setItem('r10-watermark', file); } catch {}
   };
 
   const handleVinheteChange = (file: string) => {
@@ -888,21 +898,23 @@ const VideoSlidePage = () => {
           const fontSizePX = Math.round(baseFont * 1.2); // +20%
           const padXPre = 20; // padding do retângulo vermelho
           ctx.font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
-          // largura máxima para o texto, considerando margens e padding do retângulo
+          // largura máxima para o texto (área útil do retângulo alinhado à margem direita)
           const maxW = canvas.width - (SAFE_MARGIN * 2) - (padXPre * 2);
+
+          // Wrap preservando espaços entre palavras, mas sem estourar a largura máxima
           const tokens = captionText.split(/(\s+)/);
           let current = '';
           for (const t of tokens) {
             const test = current + t;
             if (ctx.measureText(test).width > maxW) {
-              if (current.trim()) textLines.push(current.trimEnd());
+              if (current.length > 0) textLines.push(current);
               current = t.trimStart();
             } else {
               current = test;
             }
           }
-          if (current.trim()) textLines.push(current.trimEnd());
-          totalCharsAll = textLines.join('').length; // conta todos os caracteres (incluindo espaços)
+          if (current.length > 0) textLines.push(current);
+          totalCharsAll = textLines.reduce((acc, line) => acc + line.length, 0);
         }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -937,18 +949,25 @@ const VideoSlidePage = () => {
             }
           }
           
-          // Desenhar imagem com zoom ANIMADO
+          // Desenhar imagem com zoom ANIMADO (garantir cobertura total, sem bordas pretas)
           const imgAspect = img.width / img.height;
           const canvasAspect = canvas.width / canvas.height;
           
+          // scale mínimo necessário para cobrir o canvas inteiro (cover)
+          const coverScale = imgAspect > canvasAspect
+            ? canvas.height / (canvas.height * 1) // base pela altura
+            : canvas.width / (canvas.width * 1);   // base pela largura
+          const safeScale = Math.max(scale, 1.0); // nunca menor que 1x
+          const finalScale = Math.max(safeScale, coverScale); // evita áreas pretas
+
           let drawW, drawH;
           if (imgAspect > canvasAspect) {
             // Imagem mais larga: ajustar pela altura
-            drawH = canvas.height * scale;
+            drawH = canvas.height * finalScale;
             drawW = drawH * imgAspect;
           } else {
             // Imagem mais alta: ajustar pela largura
-            drawW = canvas.width * scale;
+            drawW = canvas.width * finalScale;
             drawH = drawW / imgAspect;
           }
           
@@ -1010,6 +1029,7 @@ const VideoSlidePage = () => {
             // Alinhamentos: barra mais à esquerda que o texto
             const textLeft = SAFE_MARGIN;
             const barLeft = SAFE_MARGIN; // respeita margem de segurança
+            const maxRectWidthGlobal = (canvas.width - SAFE_MARGIN) - textLeft;
 
             const padX = 20;
             const padY = Math.round(fontSize * 0.25); // altura do bloco acompanha o tamanho da fonte
@@ -1021,11 +1041,15 @@ const VideoSlidePage = () => {
             // Subir conjunto (barra + texto) aproximadamente 270px
             let y = canvas.height - (200 + 270) - totalH; // topo do bloco de texto mais alto
 
+            // Corrigir Y mínimo para não colar demais no topo em casos com muitas linhas
+            const minTopSafe = 120;
+            if (y < minTopSafe) y = minTopSafe;
+
             // 1) Linha amarela animada (antes do texto)
             const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
             const preLineDurationMs = BAR_DURATION_MS; // barra com easing e mais longa
             const preLineProgress = easeOutCubic(Math.min(1, elapsedMs / preLineDurationMs));
-            const yellowWidthTarget = 100; // largura fixa 100px (padrão visual)
+            const yellowWidthTarget = Math.min(100, maxRectWidthGlobal); // largura fixa (limitada pela margem)
             const yellowWidth = Math.max(0, Math.floor(yellowWidthTarget * preLineProgress));
             const yellowHeight = 15; // altura fixa 15px
             // Subir a barra amarela ~20px acima do que estava
@@ -1053,17 +1077,37 @@ const VideoSlidePage = () => {
               const renderText = line.slice(0, showForLine);
               remaining -= showForLine;
 
-              if (renderText.trim()) {
-                // Medir largura do texto atual e do retângulo
-                const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem direita
-                const textWidth = ctx.measureText(renderText).width;
-                const rectWidth = Math.min(textWidth + padX * 2, maxRectWidth);
-                ctx.fillStyle = '#cb403a';
-                ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
-                // Texto branco centralizado verticalmente no retângulo
-                ctx.fillStyle = '#ffffff';
-                if (renderText) {
-                  ctx.fillText(renderText, textLeft + padX, y - padY + rectHeight / 2);
+              if (renderText.length > 0) {
+                // Medir largura e cortar texto para caber na área segura
+                const maxRectWidth = maxRectWidthGlobal; // largura total até a margem direita
+                const maxTextWidth = Math.max(0, maxRectWidthGlobal - padX * 2);
+                let toRender = renderText;
+                let measured = ctx.measureText(toRender).width;
+                if (measured > maxTextWidth) {
+                  // Corte binário para caber exatamente
+                  let lo = 0, hi = toRender.length, fit = 0;
+                  while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    const slice = toRender.slice(0, mid);
+                    const w = ctx.measureText(slice).width;
+                    if (w <= maxTextWidth) {
+                      fit = mid;
+                      lo = mid + 1;
+                    } else {
+                      hi = mid - 1;
+                    }
+                  }
+                  toRender = toRender.slice(0, fit);
+                  measured = ctx.measureText(toRender).width;
+                }
+
+                // Desenhar retângulo e texto
+                const rectWidth = Math.min(measured + padX * 2, maxRectWidth);
+                if (rectWidth > 0 && toRender.length > 0) {
+                  ctx.fillStyle = '#cb403a';
+                  ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
+                  ctx.fillStyle = '#ffffff';
+                  ctx.fillText(toRender, textLeft + padX, y - padY + rectHeight / 2);
                 }
               }
               y += lineHeight;
@@ -1101,12 +1145,21 @@ const VideoSlidePage = () => {
       
       // Calcular duração total do vídeo (para referência)
       const totalVideoMs = slides.reduce((acc, slide) => acc + (slide.durationSec || 5) * 1000, 0);
-      const endingDurationMs = (useEndingVideo && (vinheteUrl || endingVideoUrl)) ? 3000 : 0; // 3 segundos para vinheta
+      // Duração da vinheta: se for vídeo, usar a duração do próprio arquivo; se for imagem, pode-se usar 0 (sem vinheta)
+      let endingDurationMs = 0;
+      if (useEndingVideo && (vinheteUrl || endingVideoUrl)) {
+        if (vinheteVideo && !isNaN(vinheteVideo.duration) && vinheteVideo.duration > 0) {
+          endingDurationMs = Math.round(vinheteVideo.duration * 1000);
+        } else {
+          // imagem estática: sem duração extra por padrão
+          endingDurationMs = 0;
+        }
+      }
       const finalDurationMs = totalVideoMs + endingDurationMs;
       
       // Renderizar vinheta permanente se configurada
       if ((vinheteImg || vinheteVideo) && endingDurationMs > 0) {
-        const vinheteFrames = Math.round((endingDurationMs / 1000) * FRAME_RATE); // 3 segundos de vinheta
+        const vinheteFrames = Math.round((endingDurationMs / 1000) * FRAME_RATE);
         
         if (vinheteVideo) {
           vinheteVideo.currentTime = 0;
@@ -1143,9 +1196,10 @@ const VideoSlidePage = () => {
             
             ctx.drawImage(vinheteVideo, dx, dy, drawW, drawH);
             
-            // Avançar o vídeo para o próximo frame
+            // Avançar o vídeo para o próximo frame (tempo absoluto baseado em frame)
             const frameTime = (frame / FRAME_RATE);
-            vinheteVideo.currentTime = frameTime % vinheteVideo.duration;
+            const nextTime = Math.min(vinheteVideo.duration, frameTime);
+            vinheteVideo.currentTime = nextTime;
             
           } else if (vinheteImg) {
             // Renderizar imagem estática da vinheta
@@ -1557,6 +1611,75 @@ const VideoSlidePage = () => {
         </CardHeader>
         {showAdvancedSettings && (
           <CardContent className="space-y-6">
+            {/* Área Protegida */}
+            <div className="p-3 border rounded-md">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Área Protegida</Label>
+                {!protectedUnlocked ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Senha"
+                      type="password"
+                      value={protectedInput}
+                      onChange={(e)=>setProtectedInput(e.target.value)}
+                      className="h-8 text-sm w-32"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={()=>{
+                        if (protectedInput === '850327') {
+                          setProtectedUnlocked(true);
+                          try { localStorage.setItem('r10-protected','1'); } catch {}
+                          toast.success('Área Protegida desbloqueada');
+                        } else {
+                          toast.error('Senha incorreta');
+                        }
+                      }}
+                    >Desbloquear</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-600 text-sm">✓ Desbloqueada</span>
+                    <Button size="sm" variant="ghost" onClick={()=>{
+                      setProtectedUnlocked(false);
+                      try { localStorage.removeItem('r10-protected'); } catch {}
+                    }}>Bloquear</Button>
+                  </div>
+                )}
+              </div>
+              {protectedUnlocked && (
+                <div className="mt-3 space-y-4">
+                  {/* Marca d'água custom */}
+                  <div>
+                    <Label className="text-xs">Marca d’água (arquivo)</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        placeholder="/caminho/para/logo.png"
+                        value={watermark.file}
+                        onChange={(e)=>handleWatermarkChange(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Se vazio, usa a oficial do portal.</p>
+                  </div>
+                  {/* Vinheta Final rápida */}
+                  <div>
+                    <Label className="text-xs">Vinheta Final (URL/data:)</Label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Input
+                        placeholder="/vinheta.mp4 ou data:..."
+                        value={vinheteUrl}
+                        onChange={(e)=>handleVinheteChange(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <Button size="sm" variant="outline" onClick={()=>{
+                        try { localStorage.setItem('r10-vinhete', vinheteUrl); toast.success('Vinheta salva'); } catch {}
+                      }}>Salvar</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             {/* Configurações Rápidas */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="flex items-center space-x-2">
@@ -1689,7 +1812,86 @@ const VideoSlidePage = () => {
               )}
             </div>
 
-            {/* Vinheta de Encerramento – oculto por padrão (controle permanente) */}
+            {/* Vinheta de Encerramento – seleção e upload */}
+            <div className="pt-2 border-t">
+              <Label className="text-base font-medium">🎬 Vinheta Final</Label>
+              <p className="text-sm text-muted-foreground mb-3">
+                Escolha uma vinheta para exibir por ~3s ao final do vídeo
+                {useEndingVideo && (vinheteUrl || endingVideoUrl) && (
+                  <span className="ml-2 text-green-600 font-medium">✓ Vinheta ativa</span>
+                )}
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                {predefinedEndings.map((ending) => (
+                  <div
+                    key={ending.id}
+                    className={`p-3 border rounded-lg transition-all ${
+                      selectedEndingId === ending.id 
+                        ? 'border-blue-400 bg-blue-50/50 shadow-sm' 
+                        : 'border-border hover:border-blue-300 hover:bg-blue-50/20'
+                    }`}
+                  >
+                    <button
+                      onClick={() => applySelectedEnding(ending.id)}
+                      className="w-full text-left"
+                    >
+                      <div className="font-medium text-sm mb-1">{ending.name}</div>
+                      <div className="text-xs text-muted-foreground">{ending.description}</div>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Upload personalizado de vinheta */}
+              {selectedEndingId === 'custom' && (
+                <div className="p-4 border border-dashed border-blue-300 rounded-lg bg-blue-50/20">
+                  <input
+                    type="file"
+                    id="ending-custom"
+                    accept=".png,.jpg,.jpeg,.webp,.mp4,.webm"
+                    onChange={handleEndingVideoUpload}
+                    className="hidden"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <Button asChild variant="outline" size="sm">
+                      <label htmlFor="ending-custom" className="cursor-pointer">
+                        <UploadIcon className="w-4 h-4 mr-2" />
+                        {endingVideoFile ? 'Trocar Vinheta' : 'Escolher Vinheta'}
+                      </label>
+                    </Button>
+                    {(endingVideoFile || endingVideoUrl) && (
+                      <Button
+                        onClick={() => {
+                          try {
+                            const url = endingVideoUrl || vinheteUrl;
+                            if (url) {
+                              localStorage.setItem('r10-vinhete', url);
+                              setVinheteUrl(url);
+                              setUseEndingVideo(true);
+                              toast.success('Vinheta salva como padrão');
+                            } else {
+                              toast.error('Carregue uma vinheta antes de salvar');
+                            }
+                          } catch {
+                            toast.error('Não foi possível salvar a vinheta');
+                          }
+                        }}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        Salvar como padrão
+                      </Button>
+                    )}
+                  </div>
+                  {(endingVideoFile || endingVideoUrl) && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      📄 {endingVideoFile?.name || endingVideoUrl}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </CardContent>
         )}
       </Card>
@@ -1704,7 +1906,7 @@ const VideoSlidePage = () => {
             </div>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="text-2xl font-bold text-blue-700">
-                {slides.reduce((acc, s) => acc + (s.durationSec || 5), 0) + (useEndingVideo ? 3 : 0)}s
+                {slides.reduce((acc, s) => acc + (s.durationSec || 5), 0)}s
               </div>
               <div className="text-sm text-blue-600">Duração</div>
             </div>
