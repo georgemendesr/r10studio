@@ -1348,7 +1348,7 @@ const VideoSlidePage = () => {
                         <TrashIcon className="w-4 h-4" />
                       </Button>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       {/* Image Upload */}
                       <div>
@@ -1447,67 +1447,63 @@ const VideoSlidePage = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 gap-3">
-                          <Label className="text-xs">Efeito do Texto</Label>
-                          <div className="text-sm text-muted-foreground">Digitando (typewriter)</div>
-                          <div className="grid grid-cols-2 gap-2 mt-1">
-                            <div>
-                              <Label className="text-xs">Alinhamento H</Label>
-                              <div className="mt-1 inline-flex rounded-md overflow-hidden border">
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='left' ? 'bg-primary/10' : 'bg-background' }`}
-                                  title="Esquerda"
-                                  onClick={()=>updateSlide(slide.id, 'alignH', 'left')}
-                                >
-                                  <AlignLeft className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
-                                  title="Centro"
-                                  onClick={()=>updateSlide(slide.id, 'alignH', 'center')}
-                                >
-                                  <AlignCenter className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignH||'center')==='right' ? 'bg-primary/10' : 'bg-background' } border-l`}
-                                  title="Direita"
-                                  onClick={()=>updateSlide(slide.id, 'alignH', 'right')}
-                                >
-                                  <AlignRight className="w-4 h-4" />
-                                </button>
-                              </div>
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          <div>
+                            <Label className="text-xs">Alinhamento H</Label>
+                            <div className="mt-1 inline-flex rounded-md overflow-hidden border">
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignH||'center')==='left' ? 'bg-primary/10' : 'bg-background' }`}
+                                title="Esquerda"
+                                onClick={()=>updateSlide(slide.id, 'alignH', 'left')}
+                              >
+                                <AlignLeft className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignH||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                title="Centro"
+                                onClick={()=>updateSlide(slide.id, 'alignH', 'center')}
+                              >
+                                <AlignCenter className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignH||'center')==='right' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                title="Direita"
+                                onClick={()=>updateSlide(slide.id, 'alignH', 'right')}
+                              >
+                                <AlignRight className="w-4 h-4" />
+                              </button>
                             </div>
-                            <div>
-                              <Label className="text-xs">Alinhamento V</Label>
-                              <div className="mt-1 inline-flex rounded-md overflow-hidden border">
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='top' ? 'bg-primary/10' : 'bg-background' }`}
-                                  title="Topo"
-                                  onClick={()=>updateSlide(slide.id, 'alignV', 'top')}
-                                >
-                                  <ArrowUp className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
-                                  title="Centro"
-                                  onClick={()=>updateSlide(slide.id, 'alignV', 'center')}
-                                >
-                                  <AlignCenter className="w-4 h-4 rotate-90" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={`px-2 py-1 ${ (slide.alignV||'center')==='bottom' ? 'bg-primary/10' : 'bg-background' } border-l`}
-                                  title="Base"
-                                  onClick={()=>updateSlide(slide.id, 'alignV', 'bottom')}
-                                >
-                                  <ArrowDown className="w-4 h-4" />
-                                </button>
-                              </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Alinhamento V</Label>
+                            <div className="mt-1 inline-flex rounded-md overflow-hidden border">
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignV||'center')==='top' ? 'bg-primary/10' : 'bg-background' }`}
+                                title="Topo"
+                                onClick={()=>updateSlide(slide.id, 'alignV', 'top')}
+                              >
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignV||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                title="Centro"
+                                onClick={()=>updateSlide(slide.id, 'alignV', 'center')}
+                              >
+                                <AlignCenter className="w-4 h-4 rotate-90" />
+                              </button>
+                              <button
+                                type="button"
+                                className={`px-2 py-1 ${ (slide.alignV||'center')==='bottom' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                title="Base"
+                                onClick={()=>updateSlide(slide.id, 'alignV', 'bottom')}
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1571,101 +1567,7 @@ const VideoSlidePage = () => {
               </div>
             </div>
 
-            {/* Logos */}
-            <div>
-              <Label className="text-base font-medium">Logo / Marca d'água</Label>
-              <p className="text-sm text-muted-foreground mb-3">Adicione sua logo personalizada ou deixe sem marca d'água</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                {predefinedLogos.map((logo) => (
-                  <button
-                    key={logo.id}
-                    onClick={() => applySelectedLogo(logo.id)}
-                    className={`p-3 border rounded-lg text-left transition-all ${
-                      selectedLogoId === logo.id 
-                        ? 'border-orange-400 bg-orange-50/50 shadow-sm' 
-                        : 'border-border hover:border-orange-300 hover:bg-orange-50/20'
-                    }`}
-                  >
-                    <div className="font-medium text-sm mb-1">{logo.name}</div>
-                    <div className="text-xs text-muted-foreground">{logo.description}</div>
-                  </button>
-                ))}
-              </div>
-              
-              {/* Upload personalizada (só aparece se "custom" for selecionado) */}
-              {selectedLogoId === 'custom' && (
-                <div className="p-4 border border-dashed border-orange-300 rounded-lg bg-orange-50/20">
-                  <input
-                    type="file"
-                    id="watermark-custom"
-                    accept=".png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                          const result = e.target?.result as string;
-                          setWatermark(prev => ({ ...prev, file: result }));
-                          // Atualizar logo personalizada
-                          const customLogo = predefinedLogos.find(l => l.id === 'custom');
-                          if (customLogo) customLogo.file = result;
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                    className="hidden"
-                  />
-                  <div className="flex gap-2 items-center">
-                    <Button
-                      asChild
-                      variant="outline"
-                      size="sm"
-                    >
-                      <label htmlFor="watermark-custom" className="cursor-pointer">
-                        <UploadIcon className="w-4 h-4 mr-2" />
-                        {watermark.file ? 'Trocar Arquivo PNG' : 'Escolher Arquivo PNG'}
-                      </label>
-                    </Button>
-                    {watermark.file && (
-                      <Button
-                        onClick={() => {
-                          setWatermark(prev => ({ ...prev, file: "" }));
-                          setSelectedLogoId('none');
-                        }}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                  
-                  {watermark.file && (
-                    <div className="mt-3">
-                      <img src={watermark.file} alt="Prévia da logo" className="max-h-16 opacity-80 mb-2" />
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Posição da logo (só aparece se tiver logo personalizada selecionada) */}
-              {(selectedLogoId === 'custom' && watermark.file) && (
-                <div className="mt-3">
-                  <Label className="text-sm font-medium">📍 Posição da Logo</Label>
-                  <select
-                    value={watermark.position}
-                    onChange={(e) => setWatermark(prev => ({ ...prev, position: e.target.value as Watermark['position'] }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="top-left">🔼← Superior Esquerda</option>
-                    <option value="top-right">🔼→ Superior Direita</option>
-                    <option value="bottom-left">🔽← Inferior Esquerda</option>
-                    <option value="bottom-right">🔽→ Inferior Direita</option>
-                  </select>
-                </div>
-              )}
-            </div>
+            {/* Logo / Marca d'água – oculto por padrão (controle permanente) */}
             
             {/* Trilha Sonora */}
             <div>
@@ -1763,72 +1665,7 @@ const VideoSlidePage = () => {
               )}
             </div>
 
-            {/* Vinheta de Encerramento */}
-            <div>
-              <Label className="text-base font-medium">🎬 Vinheta de Encerramento</Label>
-              <p className="text-sm text-muted-foreground mb-3">Adicione uma vinheta personalizada ao final</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                {predefinedEndings.map((ending) => (
-                  <button
-                    key={ending.id}
-                    onClick={() => applySelectedEnding(ending.id)}
-                    className={`p-3 border rounded-lg text-left transition-all ${
-                      selectedEndingId === ending.id 
-                        ? 'border-purple-400 bg-purple-50/50 shadow-sm' 
-                        : 'border-border hover:border-purple-300 hover:bg-purple-50/20'
-                    }`}
-                  >
-                    <div className="font-medium text-sm mb-1">{ending.name}</div>
-                    <div className="text-xs text-muted-foreground">{ending.description}</div>
-                  </button>
-                ))}
-              </div>
-              
-              {/* Upload personalizado de vinheta */}
-              {selectedEndingId === 'custom' && (
-                <div className="p-4 border border-dashed border-purple-300 rounded-lg bg-purple-50/20">
-                  <input
-                    type="file"
-                    id="ending-custom"
-                    accept=".mp4,.webm,.mov"
-                    onChange={handleEndingVideoUpload}
-                    className="hidden"
-                  />
-                  <div className="flex gap-2 items-center">
-                    <Button
-                      asChild
-                      variant="outline"
-                      size="sm"
-                    >
-                      <label htmlFor="ending-custom" className="cursor-pointer">
-                        <UploadIcon className="w-4 h-4 mr-2" />
-                        {endingVideoFile ? 'Trocar Vinheta' : 'Escolher Vinheta'}
-                      </label>
-                    </Button>
-                    {endingVideoFile && (
-                      <Button
-                        onClick={() => {
-                          setEndingVideoFile(null);
-                          setEndingVideoUrl('');
-                          setSelectedEndingId('none');
-                          setUseEndingVideo(false);
-                        }}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                  {endingVideoFile && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      🎥 {endingVideoFile.name}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Vinheta de Encerramento – oculto por padrão (controle permanente) */}
           </CardContent>
         )}
       </Card>
