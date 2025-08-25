@@ -58,12 +58,12 @@ const VideoSlidePage = () => {
 
   // Carregar configurações permanentes do localStorage
   useEffect(() => {
-    const savedWatermark = localStorage.getItem('r10-watermark');
-    const savedVinhete = localStorage.getItem('r10-vinhete');
-    
-    if (savedWatermark) {
-      setWatermark(prev => ({ ...prev, file: savedWatermark }));
-    }
+  const savedWatermark = localStorage.getItem('r10-watermark');
+  const savedVinhete = localStorage.getItem('r10-vinhete');
+  // Sempre usar a marca d'água oficial do portal, ignorando customizações
+  const officialWatermark = '/logo-r10-piaui.png';
+  setWatermark(prev => ({ ...prev, file: officialWatermark }));
+  try { localStorage.setItem('r10-watermark', officialWatermark); } catch {}
     
     if (savedVinhete) {
       setVinheteUrl(savedVinhete);
@@ -985,6 +985,8 @@ const VideoSlidePage = () => {
           
           // CORRIGIDO: Linha amarela antes do texto + texto com typewriter (cores da referência)
           if (textLines.length > 0) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             // Configurações baseadas em fonte (+20%)
             const SAFE_MARGIN = 50;
             const fontSize = Math.round(48 * 1.2);
@@ -1046,7 +1048,7 @@ const VideoSlidePage = () => {
 
               if (renderText.trim()) {
                 // Garantir que o texto/retângulo não ultrapassem a margem direita
-                const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem
+        const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem
                 const allowedTextWidth = Math.max(0, maxRectWidth - padX * 2);
                 let fittedText = renderText;
                 while (fittedText && ctx.measureText(fittedText).width > allowedTextWidth) {
@@ -1064,10 +1066,13 @@ const VideoSlidePage = () => {
               }
               y += lineHeight;
             }
+      ctx.restore();
           }
 
           // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo) e mais visível
           if (watermarkImg) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             const wmTargetWidth = 220; // maior para visibilidade conforme referência
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
@@ -1080,6 +1085,7 @@ const VideoSlidePage = () => {
             ctx.globalAlpha = 0.9; // Mais visível
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
+            ctx.restore();
           }
           
           // Sinalizar frame ao track (quando suportado) para capturar frame
@@ -1162,6 +1168,8 @@ const VideoSlidePage = () => {
           
           // Adicionar watermark também na vinheta
           if (watermarkImg) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             const wmTargetWidth = 220;
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
@@ -1171,6 +1179,7 @@ const VideoSlidePage = () => {
             ctx.globalAlpha = 0.6;
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
+            ctx.restore();
           }
 
           requestFrameIfSupported();
