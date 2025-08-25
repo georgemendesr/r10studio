@@ -1041,25 +1041,34 @@ const VideoSlidePage = () => {
             const typewriterDurationMs = TYPEWRITER_DURATION_MS;
             const progress = Math.min(1, elapsedForText / typewriterDurationMs);
 
-            // Calcular caracteres a mostrar
+            // Calcular caracteres a mostrar (contagem global sem espaços)
             const totalCharsToShow = Math.floor(totalTextLength * progress);
-            let charsShown = 0;
+            let remaining = totalCharsToShow;
+
+            // Helper: encontra índice de corte na string original, revelando N chars não-espaço
+            const sliceIndexForVisible = (src: string, nonSpaceCount: number) => {
+              if (nonSpaceCount <= 0) return 0;
+              let count = 0;
+              for (let idx = 0; idx < src.length; idx++) {
+                const ch = src[idx];
+                if (!/\s/.test(ch)) {
+                  count++;
+                  if (count === nonSpaceCount) {
+                    return idx + 1; // inclui este caractere
+                  }
+                }
+              }
+              return src.length;
+            };
 
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
               const line = textLines[lineIndex];
-              const cleanLine = line.replace(/\s+/g, '');
-
-              let renderText = '';
-              if (charsShown < totalCharsToShow) {
-                const charsInThisLine = Math.min(cleanLine.length, totalCharsToShow - charsShown);
-                const charProgress = cleanLine.length === 0 ? 0 : (charsInThisLine / cleanLine.length);
-                const targetLength = Math.floor(line.length * charProgress);
-                renderText = line.slice(0, targetLength);
-                // Corrigido: acumular apenas os caracteres exibidos neste frame
-                charsShown += charsInThisLine;
-              } else {
-                break;
-              }
+              const nonSpaceLen = line.replace(/\s+/g, '').length;
+              if (remaining <= 0) break; // nada mais a mostrar
+              const showForLine = Math.min(nonSpaceLen, remaining);
+              const cutAt = sliceIndexForVisible(line, showForLine);
+              const renderText = line.slice(0, cutAt);
+              remaining -= showForLine;
 
               if (renderText.trim()) {
                 // Garantir que o texto/retângulo não ultrapassem a margem direita
