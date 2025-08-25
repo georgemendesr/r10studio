@@ -884,8 +884,13 @@ const VideoSlidePage = () => {
         let textLines: string[] = [];
         let totalTextLength = 0;
         if (captionText) {
-          ctx.font = '800 48px Poppins, Arial, sans-serif'; // Fonte legível
-          const maxW = canvas.width - 80; // Margem total 80px
+          const SAFE_MARGIN = 50; // margem de segurança em cada lado
+          const baseFont = 48;
+          const fontSizePX = Math.round(baseFont * 1.2); // +20%
+          const padXPre = 20; // padding do retângulo vermelho
+          ctx.font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
+          // largura máxima para o texto, considerando margens e padding do retângulo
+          const maxW = canvas.width - (SAFE_MARGIN * 2) - (padXPre * 2);
           const tokens = captionText.split(/(\s+)/);
           let current = '';
           for (const t of tokens) {
@@ -980,15 +985,16 @@ const VideoSlidePage = () => {
           
           // CORRIGIDO: Linha amarela antes do texto + texto com typewriter (cores da referência)
           if (textLines.length > 0) {
-            // Configurações baseadas em fonte
-            const fontSize = 48;
+            // Configurações baseadas em fonte (+20%)
+            const SAFE_MARGIN = 50;
+            const fontSize = Math.round(48 * 1.2);
             ctx.font = `800 ${fontSize}px Poppins, Arial, sans-serif`;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
 
             // Alinhamentos: barra mais à esquerda que o texto
-            const textLeft = 40;
-            const barLeft = 20; // barra mais próxima da lateral esquerda
+            const textLeft = SAFE_MARGIN;
+            const barLeft = SAFE_MARGIN; // respeita margem de segurança
 
             const lineHeight = Math.round(fontSize * 1.25);
             const padX = 20;
@@ -1039,13 +1045,22 @@ const VideoSlidePage = () => {
               }
 
               if (renderText.trim()) {
-                const textWidth = ctx.measureText(renderText).width;
-                // Fundo vermelho conforme referência
+                // Garantir que o texto/retângulo não ultrapassem a margem direita
+                const maxRectWidth = (canvas.width - SAFE_MARGIN) - textLeft; // espaço disponível até a margem
+                const allowedTextWidth = Math.max(0, maxRectWidth - padX * 2);
+                let fittedText = renderText;
+                while (fittedText && ctx.measureText(fittedText).width > allowedTextWidth) {
+                  fittedText = fittedText.slice(0, -1);
+                }
+                const textWidth = ctx.measureText(fittedText).width;
+                const rectWidth = Math.min(textWidth + padX * 2, maxRectWidth);
                 ctx.fillStyle = '#cb403a';
-                ctx.fillRect(textLeft, y - padY, textWidth + padX * 2, rectHeight);
+                ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
                 // Texto branco centralizado verticalmente no retângulo
                 ctx.fillStyle = '#ffffff';
-                ctx.fillText(renderText, textLeft + padX, y - padY + rectHeight / 2);
+                if (fittedText) {
+                  ctx.fillText(fittedText, textLeft + padX, y - padY + rectHeight / 2);
+                }
               }
               y += lineHeight;
             }
@@ -1053,15 +1068,14 @@ const VideoSlidePage = () => {
 
           // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo) e mais visível
           if (watermarkImg) {
-            const margin = 28;
             const wmTargetWidth = 220; // maior para visibilidade conforme referência
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
 
-            // POSIÇÃO CORRIGIDA: topo direito sempre
-            const x = canvas.width - wmW - margin;
-            const y = margin;
+            // Posição: exatamente 40px das bordas superior/direita
+            const x = canvas.width - wmW - 40;
+            const y = 40;
             
             ctx.globalAlpha = 0.9; // Mais visível
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
@@ -1148,13 +1162,12 @@ const VideoSlidePage = () => {
           
           // Adicionar watermark também na vinheta
           if (watermarkImg) {
-            const margin = 40;
             const wmTargetWidth = 220;
             const ratio = watermarkImg.width / watermarkImg.height;
             const wmW = wmTargetWidth;
             const wmH = Math.round(wmTargetWidth / ratio);
-            const x = canvas.width - wmW - margin;
-            const y = margin;
+            const x = canvas.width - wmW - 40; // 40px da direita
+            const y = 40; // 40px do topo
             ctx.globalAlpha = 0.6;
             ctx.drawImage(watermarkImg, x, y, wmW, wmH);
             ctx.globalAlpha = 1.0;
