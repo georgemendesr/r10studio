@@ -3,11 +3,23 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Zap, Crown, Gauge } from "lucide-react";
 
+type SystemCapacity = {
+  gpu?: boolean;
+  memory?: number | string;
+  cores?: number | string;
+  connection?: string;
+};
+
+type Recommendation = {
+  type: 'warning' | 'suggestion' | 'info' | 'danger' | 'secondary' | 'default';
+  message: string;
+};
+
 interface QualitySelectorProps {
   value: string;
   onChange: (value: string) => void;
-  systemCapacity?: any;
-  recommendations?: any[];
+  systemCapacity?: SystemCapacity;
+  recommendations?: Recommendation[];
 }
 
 export function QualitySelector({ value, onChange, systemCapacity, recommendations }: QualitySelectorProps) {

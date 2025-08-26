@@ -14,8 +14,8 @@ const PASSWORD = '2025r10';
 export default function LoginPage() {
 	const { login, user } = useAuth();
 	const navigate = useNavigate();
-	const location = useLocation() as any;
-	const from = location.state?.from?.pathname || '/video-slide';
+	const location = useLocation() as unknown as { state?: { from?: { pathname?: string } } };
+	const from = location?.state?.from?.pathname || '/video-slide';
 
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');

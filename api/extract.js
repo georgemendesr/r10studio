@@ -1,6 +1,6 @@
-const { extractFromUrlOrText } = require('./_segmenter');
+import { extractFromUrlOrText } from './_segmenter.js';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   try {
     const { url, text, maxSeconds } = req.body || {};
@@ -9,4 +9,4 @@ module.exports = async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: 'Falha na extração/segmentação' });
   }
-};
+}

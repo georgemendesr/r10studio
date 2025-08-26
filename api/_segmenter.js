@@ -1,6 +1,6 @@
-const { Readability } = require('@mozilla/readability');
-const { JSDOM } = require('jsdom');
-const Groq = require('groq-sdk');
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
+import Groq from 'groq-sdk';
 
 const BAR_MS = 900;
 const HOLD_MS = 600;
@@ -108,4 +108,4 @@ async function extractFromUrlOrText({ url, text, maxSeconds = 90 }) {
   return segmented;
 }
 
-module.exports = { heuristicSegment, groqSegment, extractFromUrlOrText };
+export { heuristicSegment, groqSegment, extractFromUrlOrText };

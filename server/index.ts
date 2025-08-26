@@ -71,7 +71,7 @@ function heuristicSegment(text: string, maxSeconds = 90): ExtractionResult {
 		.replace(/\n{2,}/g, '\n')
 		.replace(/\s+/g, ' ')
 		.trim();
-	const sentences = cleaned.split(/(?<=[\.\!\?])\s+/);
+	const sentences = cleaned.split(/(?<=[.!?])\s+/);
 	// Agrupar em blocos curtos (10-18 palavras)
 	const segments: Segment[] = [];
 	let buf: string[] = [];
@@ -154,7 +154,7 @@ app.post('/api/extract', async (req, res) => {
 		// Propagar título se vazio
 		if (!segmented.title) segmented.title = title;
 		return res.json(segmented);
-	} catch (e: any) {
+	} catch (e: unknown) {
 		console.error('extract error', e);
 		return res.status(500).json({ error: 'Falha na extração/segmentação' });
 	}
@@ -166,7 +166,7 @@ app.post('/api/segment', async (req, res) => {
 		if (!text) return res.status(400).json({ error: 'Informe text' });
 	const segmented = await groqSegment(text, maxSeconds || 90);
 		return res.json(segmented);
-	} catch (e: any) {
+	} catch (e: unknown) {
 		console.error('segment error', e);
 		return res.status(500).json({ error: 'Falha na segmentação' });
 	}
