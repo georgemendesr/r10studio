@@ -10,6 +10,12 @@ export default defineConfig(({ mode }) => ({
   port: 4501, // porta fixa: proibido usar 5173
   strictPort: true, // não faz fallback de porta
   open: false,
+  proxy: {
+    '/api': {
+      target: 'http://localhost:5501',
+      changeOrigin: true,
+    }
+  }
   },
   plugins: [
     react(),

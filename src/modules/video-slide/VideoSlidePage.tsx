@@ -8,6 +8,7 @@ import { PlusIcon, TrashIcon, UploadIcon, PlayIcon, PauseIcon, AlignLeft, AlignC
 import { toast } from "sonner";
 import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
+import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
 interface Slide {
   id: string;
@@ -60,6 +61,11 @@ const VideoSlidePage = () => {
   const [compactView, setCompactView] = useState<boolean>(true);
   const [bulkEffectValue, setBulkEffectValue] = useState<string>('STEP_IN_PRECISION');
   const [bulkTextValue, setBulkTextValue] = useState<string>('');
+  // Extração/segmentação
+  const [articleUrl, setArticleUrl] = useState<string>('');
+  const [articleText, setArticleText] = useState<string>('');
+  const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
 
   // Carregar configurações permanentes do localStorage
   useEffect(() => {
@@ -1525,6 +1531,72 @@ const VideoSlidePage = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      {/* Extração inteligente de matéria */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Assistente de texto jornalístico (beta)</CardTitle>
+          <p className="text-sm text-muted-foreground">Cole um link de matéria ou o texto bruto; eu segmento em blocos e sugiro a quantidade de imagens.</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Link da matéria (opcional)</Label>
+              <Input value={articleUrl} onChange={(e)=>setArticleUrl(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Ou texto bruto (opcional)</Label>
+              <Textarea value={articleText} onChange={(e)=>setArticleText(e.target.value)} placeholder="Cole o texto aqui..." className="min-h-[90px]" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={async()=>{
+              if (!articleUrl && !articleText.trim()) {
+                toast.error('Informe o link ou cole o texto.');
+                return;
+              }
+              try {
+                setIsExtracting(true);
+                const result = await extractFromUrlOrText({ url: articleUrl || undefined, text: articleText || undefined });
+                setExtraction(result);
+                toast.success('Texto segmentado com sucesso.');
+              } catch (e:any) {
+                toast.error('Falha ao extrair/segmentar.');
+              } finally {
+                setIsExtracting(false);
+              }
+            }} disabled={isExtracting}>{isExtracting ? 'Processando...' : 'Analisar'}</Button>
+            {extraction && (
+              <Button size="sm" variant="outline" onClick={()=>{
+                // Popular texto dos slides com os blocos segmentados
+                const segs = extraction.segments || [];
+                if (segs.length === 0) return;
+                // Garante no máximo 20
+                const limited = segs.slice(0, 20);
+                const ensureSlides = Math.max(slides.length, limited.length);
+                const next: Slide[] = [];
+                for (let i=0;i<ensureSlides;i++) {
+                  const existing = slides[i];
+                  const caption = limited[i]?.text || existing?.caption || '';
+                  if (existing) next.push({ ...existing, caption });
+                  else next.push({ id: uuidv4(), image: '', caption, effect: 'STEP_IN_PRECISION', textAnimation: 'typewriter', durationSec: 5, alignH: 'center', alignV: 'center' });
+                }
+                setSlides(next);
+                if (extraction.title && !title) setTitle(extraction.title);
+              }}>Aplicar aos slides</Button>
+            )}
+          </div>
+          {extraction && (
+            <div className="mt-2 p-2 border rounded">
+              <div className="text-sm font-medium">Sugestão de imagens: {extraction.suggestedImages}</div>
+              <ul className="list-disc pl-4 text-sm mt-2 space-y-1">
+                {extraction.segments.map((s, idx)=> (
+                  <li key={idx} className="leading-snug">{s.text}</li>
+                ))}
+              </ul>
             </div>
           )}
         </CardContent>
