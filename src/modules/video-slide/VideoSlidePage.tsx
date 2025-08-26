@@ -566,6 +566,10 @@ const VideoSlidePage = () => {
       toast.error("Por favor, adicione imagens a todos os slides");
       return;
     }
+    if (!endingVideoUrl) {
+      toast.error("Envie a vinheta final (vídeo) na Área Protegida antes de gerar");
+      return;
+    }
 
     setIsGenerating(true);
     
@@ -822,41 +826,23 @@ const VideoSlidePage = () => {
         }
       }
 
-      // Pré-carregar vinheta permanente se existir
-      let vinheteImg: HTMLImageElement | null = null;
+      // Pré-carregar vinheta (apenas vídeo)
       let vinheteVideo: HTMLVideoElement | null = null;
-      const finalVinheteUrl = vinheteUrl || endingVideoUrl;
-      
+      const finalVinheteUrl = endingVideoUrl;
       if (finalVinheteUrl) {
-        if (finalVinheteUrl.startsWith('data:video') || finalVinheteUrl.endsWith('.mp4') || finalVinheteUrl.endsWith('.webm')) {
-          // É vídeo
-          vinheteVideo = document.createElement('video');
-          vinheteVideo.src = finalVinheteUrl;
-          vinheteVideo.muted = true;
-          vinheteVideo.loop = true;
-          try {
-            await new Promise<void>((res) => {
-              if (!vinheteVideo) return res();
-              vinheteVideo.oncanplay = () => res();
-              vinheteVideo.onerror = () => res();
-              vinheteVideo.load();
-            });
-          } catch (e) {
-            console.warn('Falha ao carregar vinheta de vídeo:', e);
-          }
-        } else {
-          // É imagem
-          vinheteImg = new Image();
-          vinheteImg.src = finalVinheteUrl;
-          try {
-            await new Promise<void>((res) => {
-              if (!vinheteImg) return res();
-              vinheteImg.onload = () => res();
-              vinheteImg.onerror = () => res();
-            });
-          } catch (e) {
-            console.warn('Falha ao carregar vinheta de imagem:', e);
-          }
+        vinheteVideo = document.createElement('video');
+        vinheteVideo.src = finalVinheteUrl;
+        vinheteVideo.muted = true;
+        vinheteVideo.loop = false;
+        try {
+          await new Promise<void>((res) => {
+            if (!vinheteVideo) return res();
+            vinheteVideo.oncanplay = () => res();
+            vinheteVideo.onerror = () => res();
+            vinheteVideo.load();
+          });
+        } catch (e) {
+          console.warn('Falha ao carregar vinheta de vídeo:', e);
         }
       }
 
@@ -901,16 +887,41 @@ const VideoSlidePage = () => {
           // largura máxima para o texto (área útil do retângulo alinhado à margem direita)
           const maxW = canvas.width - (SAFE_MARGIN * 2) - (padXPre * 2);
 
-          // Wrap preservando espaços entre palavras, mas sem estourar a largura máxima
+          // Wrap robusto: preserva espaços e quebra palavras muito longas por caracteres
           const tokens = captionText.split(/(\s+)/);
           let current = '';
+          const isWhitespace = (s: string) => /^\s+$/.test(s);
           for (const t of tokens) {
-            const test = current + t;
-            if (ctx.measureText(test).width > maxW) {
-              if (current.length > 0) textLines.push(current);
-              current = t.trimStart();
-            } else {
-              current = test;
+            const candidate = current + t;
+            const width = ctx.measureText(candidate).width;
+            if (width <= maxW) {
+              current = candidate;
+              continue;
+            }
+            // Se estourou e já temos algo na linha, envia a linha atual e reavalia o token
+            if (current.length > 0) {
+              textLines.push(current);
+              current = '';
+              // Reprocessar o mesmo token agora com linha vazia
+              if (isWhitespace(t)) {
+                // espaço líder pode ser descartado
+                continue;
+              }
+            }
+            // Se a palavra sozinha já não cabe, quebrar por caracteres
+            if (!isWhitespace(t)) {
+              let chunk = '';
+              for (const ch of t) {
+                const testChunk = chunk + ch;
+                if (ctx.measureText(testChunk).width <= maxW) {
+                  chunk = testChunk;
+                } else {
+                  if (chunk.length > 0) textLines.push(chunk);
+                  chunk = ch; // começa próximo pedaço
+                }
+              }
+              // o que sobrou vira início de próxima linha
+              current = chunk;
             }
           }
           if (current.length > 0) textLines.push(current);
@@ -1078,36 +1089,14 @@ const VideoSlidePage = () => {
               remaining -= showForLine;
 
               if (renderText.length > 0) {
-                // Medir largura e cortar texto para caber na área segura
-                const maxRectWidth = maxRectWidthGlobal; // largura total até a margem direita
-                const maxTextWidth = Math.max(0, maxRectWidthGlobal - padX * 2);
-                let toRender = renderText;
-                let measured = ctx.measureText(toRender).width;
-                if (measured > maxTextWidth) {
-                  // Corte binário para caber exatamente
-                  let lo = 0, hi = toRender.length, fit = 0;
-                  while (lo <= hi) {
-                    const mid = (lo + hi) >> 1;
-                    const slice = toRender.slice(0, mid);
-                    const w = ctx.measureText(slice).width;
-                    if (w <= maxTextWidth) {
-                      fit = mid;
-                      lo = mid + 1;
-                    } else {
-                      hi = mid - 1;
-                    }
-                  }
-                  toRender = toRender.slice(0, fit);
-                  measured = ctx.measureText(toRender).width;
-                }
-
-                // Desenhar retângulo e texto
-                const rectWidth = Math.min(measured + padX * 2, maxRectWidth);
-                if (rectWidth > 0 && toRender.length > 0) {
+                // Como a linha já foi pré-quebrada para caber, basta medir e desenhar
+                const textWidth = ctx.measureText(renderText).width;
+                const rectWidth = Math.min(textWidth + padX * 2, maxRectWidthGlobal);
+                if (rectWidth > 0) {
                   ctx.fillStyle = '#cb403a';
                   ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
                   ctx.fillStyle = '#ffffff';
-                  ctx.fillText(toRender, textLeft + padX, y - padY + rectHeight / 2);
+                  ctx.fillText(renderText, textLeft + padX, y - padY + rectHeight / 2);
                 }
               }
               y += lineHeight;
@@ -1145,30 +1134,18 @@ const VideoSlidePage = () => {
       
       // Calcular duração total do vídeo (para referência)
       const totalVideoMs = slides.reduce((acc, slide) => acc + (slide.durationSec || 5) * 1000, 0);
-      // Duração da vinheta: se for vídeo, usar a duração do próprio arquivo; se for imagem, pode-se usar 0 (sem vinheta)
+      // Duração da vinheta: usar a duração do vídeo enviado
       let endingDurationMs = 0;
-      if (useEndingVideo && (vinheteUrl || endingVideoUrl)) {
-        if (vinheteVideo && !isNaN(vinheteVideo.duration) && vinheteVideo.duration > 0) {
-          endingDurationMs = Math.round(vinheteVideo.duration * 1000);
-        } else {
-          // imagem estática: sem duração extra por padrão
-          endingDurationMs = 0;
-        }
+      if (useEndingVideo && endingVideoUrl && vinheteVideo && !isNaN(vinheteVideo.duration) && vinheteVideo.duration > 0) {
+        endingDurationMs = Math.round(vinheteVideo.duration * 1000);
       }
       const finalDurationMs = totalVideoMs + endingDurationMs;
       
       // Renderizar vinheta permanente se configurada
-      if ((vinheteImg || vinheteVideo) && endingDurationMs > 0) {
+      if ((vinheteVideo) && endingDurationMs > 0) {
         const vinheteFrames = Math.round((endingDurationMs / 1000) * FRAME_RATE);
-        
-        if (vinheteVideo) {
-          vinheteVideo.currentTime = 0;
-          try {
-            await vinheteVideo.play();
-          } catch (e) {
-            console.warn('Erro ao iniciar vinheta de vídeo:', e);
-          }
-        }
+        vinheteVideo.currentTime = 0;
+        try { await vinheteVideo.play(); } catch {}
         
   const vinheteStart = Date.now();
   for (let frame = 0; frame < vinheteFrames; frame++) {
@@ -1195,31 +1172,9 @@ const VideoSlidePage = () => {
             }
             
             ctx.drawImage(vinheteVideo, dx, dy, drawW, drawH);
-            
-            // Avançar o vídeo para o próximo frame (tempo absoluto baseado em frame)
+            // Avançar o vídeo para o próximo frame baseado no tempo
             const frameTime = (frame / FRAME_RATE);
-            const nextTime = Math.min(vinheteVideo.duration, frameTime);
-            vinheteVideo.currentTime = nextTime;
-            
-          } else if (vinheteImg) {
-            // Renderizar imagem estática da vinheta
-            const vinheteAspect = vinheteImg.width / vinheteImg.height;
-            const canvasAspect = canvas.width / canvas.height;
-            
-            let drawW, drawH, dx, dy;
-            if (vinheteAspect > canvasAspect) {
-              drawH = canvas.height;
-              drawW = drawH * vinheteAspect;
-              dx = (canvas.width - drawW) / 2;
-              dy = 0;
-            } else {
-              drawW = canvas.width;
-              drawH = drawW / vinheteAspect;
-              dx = 0;
-              dy = (canvas.height - drawH) / 2;
-            }
-            
-            ctx.drawImage(vinheteImg, dx, dy, drawW, drawH);
+            vinheteVideo.currentTime = Math.min(vinheteVideo.duration, frameTime);
           }
           
           // Adicionar watermark também na vinheta
@@ -1444,7 +1399,7 @@ const VideoSlidePage = () => {
                                 <img
                                   src={slide.image}
                                   alt={`Slide ${index + 1}`}
-                                  className="w-full aspect-[9/16] object-cover rounded border"
+                                  className="w-full max-h-48 object-contain rounded border bg-white"
                                 />
                               ) : (
                                 <PunchZoomYoYo
@@ -1662,20 +1617,46 @@ const VideoSlidePage = () => {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">Se vazio, usa a oficial do portal.</p>
                   </div>
-                  {/* Vinheta Final rápida */}
+                  {/* Vinheta Final (upload obrigatório de vídeo) */}
                   <div>
-                    <Label className="text-xs">Vinheta Final (URL/data:)</Label>
+                    <Label className="text-xs">Vinheta Final (vídeo)</Label>
                     <div className="mt-1 flex items-center gap-2">
-                      <Input
-                        placeholder="/vinheta.mp4 ou data:..."
-                        value={vinheteUrl}
-                        onChange={(e)=>handleVinheteChange(e.target.value)}
-                        className="h-8 text-sm"
+                      <input
+                        type="file"
+                        id="ending-protected"
+                        accept=".mp4,.webm"
+                        onChange={handleEndingVideoUpload}
+                        className="hidden"
                       />
-                      <Button size="sm" variant="outline" onClick={()=>{
-                        try { localStorage.setItem('r10-vinhete', vinheteUrl); toast.success('Vinheta salva'); } catch {}
-                      }}>Salvar</Button>
+                      <Button asChild size="sm" variant="outline">
+                        <label htmlFor="ending-protected" className="cursor-pointer">
+                          <UploadIcon className="w-4 h-4 mr-2" />
+                          {endingVideoFile ? 'Trocar vinheta' : 'Enviar vinheta'}
+                        </label>
+                      </Button>
+                      {(endingVideoFile || endingVideoUrl) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={()=>{
+                            try {
+                              const url = endingVideoUrl;
+                              if (url) {
+                                localStorage.setItem('r10-vinhete', url);
+                                setVinheteUrl(url);
+                                setUseEndingVideo(true);
+                                toast.success('Vinheta salva como padrão');
+                              } else {
+                                toast.error('Envie um vídeo de vinheta primeiro');
+                              }
+                            } catch {}
+                          }}
+                        >Salvar</Button>
+                      )}
                     </div>
+                    {(endingVideoFile || endingVideoUrl) && (
+                      <p className="text-xs text-muted-foreground mt-1">📄 {endingVideoFile?.name || endingVideoUrl}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1812,85 +1793,13 @@ const VideoSlidePage = () => {
               )}
             </div>
 
-            {/* Vinheta de Encerramento – seleção e upload */}
+            {/* Vinheta de Encerramento – upload obrigatório */}
             <div className="pt-2 border-t">
               <Label className="text-base font-medium">🎬 Vinheta Final</Label>
               <p className="text-sm text-muted-foreground mb-3">
-                Escolha uma vinheta para exibir por ~3s ao final do vídeo
-                {useEndingVideo && (vinheteUrl || endingVideoUrl) && (
-                  <span className="ml-2 text-green-600 font-medium">✓ Vinheta ativa</span>
-                )}
+                A vinheta final (vídeo) será inserida automaticamente após os slides.
               </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                {predefinedEndings.map((ending) => (
-                  <div
-                    key={ending.id}
-                    className={`p-3 border rounded-lg transition-all ${
-                      selectedEndingId === ending.id 
-                        ? 'border-blue-400 bg-blue-50/50 shadow-sm' 
-                        : 'border-border hover:border-blue-300 hover:bg-blue-50/20'
-                    }`}
-                  >
-                    <button
-                      onClick={() => applySelectedEnding(ending.id)}
-                      className="w-full text-left"
-                    >
-                      <div className="font-medium text-sm mb-1">{ending.name}</div>
-                      <div className="text-xs text-muted-foreground">{ending.description}</div>
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Upload personalizado de vinheta */}
-              {selectedEndingId === 'custom' && (
-                <div className="p-4 border border-dashed border-blue-300 rounded-lg bg-blue-50/20">
-                  <input
-                    type="file"
-                    id="ending-custom"
-                    accept=".png,.jpg,.jpeg,.webp,.mp4,.webm"
-                    onChange={handleEndingVideoUpload}
-                    className="hidden"
-                  />
-                  <div className="flex gap-2 items-center">
-                    <Button asChild variant="outline" size="sm">
-                      <label htmlFor="ending-custom" className="cursor-pointer">
-                        <UploadIcon className="w-4 h-4 mr-2" />
-                        {endingVideoFile ? 'Trocar Vinheta' : 'Escolher Vinheta'}
-                      </label>
-                    </Button>
-                    {(endingVideoFile || endingVideoUrl) && (
-                      <Button
-                        onClick={() => {
-                          try {
-                            const url = endingVideoUrl || vinheteUrl;
-                            if (url) {
-                              localStorage.setItem('r10-vinhete', url);
-                              setVinheteUrl(url);
-                              setUseEndingVideo(true);
-                              toast.success('Vinheta salva como padrão');
-                            } else {
-                              toast.error('Carregue uma vinheta antes de salvar');
-                            }
-                          } catch {
-                            toast.error('Não foi possível salvar a vinheta');
-                          }
-                        }}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        Salvar como padrão
-                      </Button>
-                    )}
-                  </div>
-                  {(endingVideoFile || endingVideoUrl) && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      📄 {endingVideoFile?.name || endingVideoUrl}
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* Upload acontece via Área Protegida (acima). */}
             </div>
           </CardContent>
         )}
