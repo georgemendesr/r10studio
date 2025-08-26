@@ -121,7 +121,7 @@ app.post('/api/segment', async (req, res) => {
 	}
 });
 
-const PORT = process.env.PORT || 5501;
+const PORT = Number(process.env.PORT) || 4501;
 app.listen(PORT, () => {
 	console.log(`[server] listening on http://localhost:${PORT}`);
 });

@@ -7,12 +7,12 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
   host: true, // aceita 0.0.0.0/localhost/::
-  port: 4501, // porta fixa: proibido usar 5173
+  port: 4502, // frontend na 4502 para liberar 4501 para API
   strictPort: true, // não faz fallback de porta
   open: false,
   proxy: {
     '/api': {
-      target: 'http://localhost:5501',
+      target: 'http://localhost:4501',
       changeOrigin: true,
     }
   }
