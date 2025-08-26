@@ -7,9 +7,9 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
   host: true, // aceita 0.0.0.0/localhost/::
-  port: 4502, // frontend na 4502 para liberar 4501 para API
+  port: 4502, // frontend na 4502; API fica na 4501
   strictPort: true, // não faz fallback de porta
-  open: false,
+  open: true,
   proxy: {
     '/api': {
       target: 'http://localhost:4501',

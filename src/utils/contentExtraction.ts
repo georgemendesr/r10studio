@@ -6,21 +6,21 @@ export type ExtractionResult = {
   suggestedImages: number;
 };
 
-export async function extractFromUrlOrText(params: { url?: string; text?: string }): Promise<ExtractionResult> {
+export async function extractFromUrlOrText(params: { url?: string; text?: string; maxSeconds?: number }): Promise<ExtractionResult> {
   const res = await fetch('/api/extract', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+  body: JSON.stringify({ maxSeconds: 90, ...params }),
   });
   if (!res.ok) throw new Error(`Falha ao extrair: ${res.status}`);
   return res.json();
 }
 
-export async function segmentText(text: string): Promise<ExtractionResult> {
+export async function segmentText(text: string, maxSeconds = 90): Promise<ExtractionResult> {
   const res = await fetch('/api/segment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+  body: JSON.stringify({ text, maxSeconds }),
   });
   if (!res.ok) throw new Error(`Falha ao segmentar: ${res.status}`);
   return res.json();

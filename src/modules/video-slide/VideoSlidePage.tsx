@@ -1539,7 +1539,7 @@ const VideoSlidePage = () => {
       <Card>
         <CardHeader>
           <CardTitle>Assistente de texto jornalístico (beta)</CardTitle>
-          <p className="text-sm text-muted-foreground">Cole um link de matéria ou o texto bruto; eu segmento em blocos e sugiro a quantidade de imagens.</p>
+          <p className="text-sm text-muted-foreground">Tópicos curtos e diretos para um vídeo de no máximo 90s. Cole o link ou o texto.</p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1553,14 +1553,14 @@ const VideoSlidePage = () => {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={async()=>{
+      <Button size="sm" onClick={async()=>{
               if (!articleUrl && !articleText.trim()) {
                 toast.error('Informe o link ou cole o texto.');
                 return;
               }
               try {
                 setIsExtracting(true);
-                const result = await extractFromUrlOrText({ url: articleUrl || undefined, text: articleText || undefined });
+        const result = await extractFromUrlOrText({ url: articleUrl || undefined, text: articleText || undefined, maxSeconds: 90 });
                 setExtraction(result);
                 toast.success('Texto segmentado com sucesso.');
               } catch (e:any) {
