@@ -58,7 +58,7 @@ const VideoSlidePage = () => {
   const [isPreviewPlaying, setIsPreviewPlaying] = useState<string | null>(null);
   // UI: miniaturas compactas
   const [compactView, setCompactView] = useState<boolean>(true);
-  const [bulkEffectValue, setBulkEffectValue] = useState<string>('ALEATORIO');
+  const [bulkEffectValue, setBulkEffectValue] = useState<string>('STEP_IN_PRECISION');
   const [bulkTextValue, setBulkTextValue] = useState<string>('');
 
   // Carregar configurações permanentes do localStorage
@@ -222,40 +222,50 @@ const VideoSlidePage = () => {
   // Templates pré-configurados para jornalismo
   const journalismTemplates = [
     {
-      id: 'breaking',
-      name: '🔴 Breaking News',
-      description: 'Zoom urgente + flash para notícias de última hora',
-      effects: ['BREAKING_NEWS', 'ZOOM_3X_IN', 'PULSE'],
-      useFlash: true,
-      useFade: false,
-      keepFirstCaption: true,
-      duration: 4
-    },
-    {
-      id: 'investigative',
-      name: '🔍 Investigativo',
-      description: 'Foco gradual + fade para reportagens aprofundadas',
-      effects: ['INVESTIGATIVO', 'ZOOM_4X_IN', 'REVELACAO'],
-      useFlash: false,
-      useFade: true,
-      keepFirstCaption: false,
-      duration: 6
-    },
-    {
-      id: 'exclusive',
-      name: '🎯 Exclusiva',
-      description: 'Zoom preciso + confronto para furos jornalísticos',
-      effects: ['EXCLUSIVA', 'CONFRONTO', 'ZOOM_3X_OUT'],
+      id: 'impact',
+      name: '⚡ Impact',
+      description: 'Step multi-impacto com cortes secos',
+      effects: ['STEP_IN_MULTI_IMPACT'],
       useFlash: true,
       useFade: false,
       keepFirstCaption: true,
       duration: 5
     },
     {
-      id: 'standard',
-      name: '📰 Reportagem Padrão',
-      description: 'Aleatório equilibrado para matérias gerais',
-      effects: ['ALEATORIO'],
+      id: 'precision',
+      name: '🎯 Precision',
+      description: 'Zoom progressivo e preciso',
+      effects: ['STEP_IN_PRECISION'],
+      useFlash: false,
+      useFade: false,
+      keepFirstCaption: true,
+      duration: 5
+    },
+    {
+      id: 'aggressive',
+      name: '🪓 Aggressive In-Out',
+      description: 'Vai e volta agressivo',
+      effects: ['CUT_IN_OUT_AGGRESSIVE'],
+      useFlash: false,
+      useFade: false,
+      keepFirstCaption: false,
+      duration: 5
+    },
+    {
+      id: 'reveal',
+      name: '✨ Double Reveal',
+      description: 'Dois punches com recuo',
+      effects: ['DOUBLE_PUNCH_REVEAL'],
+      useFlash: false,
+      useFade: false,
+      keepFirstCaption: false,
+      duration: 5
+    },
+    {
+      id: 'hard4x',
+      name: '� Hard In 4x',
+      description: 'Punch rápido para 4x',
+      effects: ['HARD_IN_4X'],
       useFlash: false,
       useFade: false,
       keepFirstCaption: false,
@@ -422,22 +432,13 @@ const VideoSlidePage = () => {
     return () => clearTimeout(timer);
   }, [slides]);
 
+  // Efeitos permitidos (nomes técnicos)
   const zoomEffects = [
-    { value: "ALEATORIO", label: "Aleatório (recomendado)" },
-    { value: "ZOOM_3X_IN", label: "Zoom 3x In (0.9s)" },
-    { value: "ZOOM_4X_IN", label: "Zoom 4x In (1.2s)" },
-    { value: "ZOOM_3X_OUT", label: "Zoom 3x Out (0.9s)" },
-    { value: "ZOOM_4X_OUT", label: "Zoom 4x Out (1.2s)" },
-    { value: "PULSE", label: "Pulse (0.6s)" },
-    // NOVOS EFEITOS JORNALÍSTICOS
-    { value: "BREAKING_NEWS", label: "🔴 Breaking News - Zoom Urgente" },
-    { value: "INVESTIGATIVO", label: "🔍 Investigativo - Foco Gradual" },
-    { value: "REVELACAO", label: "⚡ Revelação - Punch Duplo" },
-    { value: "TESTEMUNHA", label: "👁️ Testemunha - Zoom Íntimo" },
-    { value: "CONFRONTO", label: "⚔️ Confronto - Vai e Volta Agressivo" },
-    { value: "EXCLUSIVA", label: "🎯 Exclusiva - Zoom Preciso" },
-    { value: "DENUNCIA", label: "🚨 Denúncia - Impacto Múltiplo" },
-    { value: "DESCOBERTA", label: "💡 Descoberta - Revelação Progressiva" }
+    { value: "STEP_IN_MULTI_IMPACT", label: "Step Zoom In · Multi-Impact" }, // antigo DENÚNCIA IMPACTO
+    { value: "STEP_IN_PRECISION", label: "Step Zoom In · Precision" },      // antigo EXCLUSIVA
+    { value: "CUT_IN_OUT_AGGRESSIVE", label: "Cut Zoom In-Out · Aggressive" }, // antigo confronto
+    { value: "DOUBLE_PUNCH_REVEAL", label: "Double Punch Reveal" },         // antigo revelação
+    { value: "HARD_IN_4X", label: "Hard Zoom In · 4x" }                     // antigo zoom 4x
   ];
 
   // Único efeito de texto: typewriter (digitando)
@@ -449,7 +450,7 @@ const VideoSlidePage = () => {
         id: uuidv4(),
         image: "",
         caption: "",
-        effect: "ALEATORIO",
+        effect: "STEP_IN_PRECISION",
   textAnimation: "typewriter",
         durationSec: 5,
         alignH: 'center',
@@ -513,7 +514,7 @@ const VideoSlidePage = () => {
             id: uuidv4(),
             image: dataUrl,
             caption: `Slide ${slides.length + i + 1}`,
-            effect: "ALEATORIO",
+            effect: "STEP_IN_PRECISION",
             textAnimation: "typewriter",
             durationSec: 5,
             alignH: 'center',
@@ -606,9 +607,10 @@ const VideoSlidePage = () => {
   const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
       
       // Criar audio context para mixer de áudio se houver trilha sonora
-      let audioContext: AudioContext | null = null;
-      let audioStream: MediaStream | null = null;
-      let audioElement: HTMLAudioElement | null = null;
+  let audioContext: AudioContext | null = null;
+  let audioStream: MediaStream | null = null;
+  let audioElement: HTMLAudioElement | null = null;
+  let endingAudioElement: HTMLVideoElement | null = null; // usaremos o elemento da vinheta para áudio
       
       if (audioUrl && selectedAudioId !== 'none') {
         try {
@@ -717,97 +719,57 @@ const VideoSlidePage = () => {
       
       // Helper: especificação de efeitos PUNCH ZOOM - CORTES SECOS BRUSCOS + EFEITOS JORNALÍSTICOS
       const getEffectSpec = (effect: string) => {
-        const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
         const map: Record<string, { durationMs: number; steps: Array<{ atMs: number; scale: number }> }> = {
-          // EFEITOS BÁSICOS
-          ZOOM_3X_IN: { durationMs: 900, steps: [ { atMs: 0, scale: 1.0 }, { atMs: 200, scale: 1.3 } ] },
-          ZOOM_4X_IN: { durationMs: 1200, steps: [ { atMs: 0, scale: 1.0 }, { atMs: 300, scale: 1.4 } ] },
-          ZOOM_3X_OUT: { durationMs: 900, steps: [ { atMs: 0, scale: 1.3 }, { atMs: 300, scale: 1.0 } ] },
-          ZOOM_4X_OUT: { durationMs: 1200, steps: [ { atMs: 0, scale: 1.4 }, { atMs: 400, scale: 1.0 } ] },
-          PULSE: { durationMs: 600, steps: [ { atMs: 0, scale: 1.0 }, { atMs: 150, scale: 1.2 }, { atMs: 300, scale: 1.0 } ] },
-          
-          // EFEITOS JORNALÍSTICOS ESPECÍFICOS
-          BREAKING_NEWS: { 
-            durationMs: 800, 
-            steps: [ 
-              { atMs: 0, scale: 1.0 }, 
-              { atMs: 100, scale: 1.5 }, // PUNCH súbito e forte para urgência
-              { atMs: 400, scale: 1.3 }  // Mantém zoom alto para tensão
-            ] 
+          // STEP_IN_MULTI_IMPACT (antigo Denúncia Impacto): múltiplos punches em sequência
+          STEP_IN_MULTI_IMPACT: { 
+            durationMs: 1000,
+            steps: [
+              { atMs: 0, scale: 1.1 },
+              { atMs: 200, scale: 1.3 },
+              { atMs: 400, scale: 1.1 },
+              { atMs: 600, scale: 1.4 },
+              { atMs: 800, scale: 1.2 }
+            ]
           },
-          INVESTIGATIVO: { 
-            durationMs: 1500, 
-            steps: [ 
-              { atMs: 0, scale: 1.1 }, 
-              { atMs: 500, scale: 1.4 }, // Foco gradual como "descobrindo pistas"
-              { atMs: 1000, scale: 1.6 } // Zoom final revelador
-            ] 
+          // STEP_IN_PRECISION (antigo Exclusiva): zoom progressivo e preciso
+          STEP_IN_PRECISION: {
+            durationMs: 900,
+            steps: [
+              { atMs: 0, scale: 1.0 },
+              { atMs: 300, scale: 1.2 },
+              { atMs: 600, scale: 1.45 }
+            ]
           },
-          REVELACAO: { 
-            durationMs: 1000, 
-            steps: [ 
-              { atMs: 0, scale: 1.0 }, 
-              { atMs: 200, scale: 1.3 }, // Primeiro punch
-              { atMs: 600, scale: 1.1 }, // Recua
-              { atMs: 800, scale: 1.5 }  // PUNCH final revelador
-            ] 
+          // CUT_IN_OUT_AGGRESSIVE (antigo Confronto): vai e volta agressivo
+          CUT_IN_OUT_AGGRESSIVE: {
+            durationMs: 800,
+            steps: [
+              { atMs: 0, scale: 1.2 },
+              { atMs: 200, scale: 0.9 },
+              { atMs: 400, scale: 1.4 },
+              { atMs: 600, scale: 1.0 }
+            ]
           },
-          TESTEMUNHA: { 
-            durationMs: 1200, 
-            steps: [ 
-              { atMs: 0, scale: 1.0 }, 
-              { atMs: 400, scale: 1.6 }, // Zoom íntimo, pessoal
-              { atMs: 800, scale: 1.4 }  // Mantém proximidade
-            ] 
+          // DOUBLE_PUNCH_REVEAL (antigo Revelação): dois punches com recuo
+          DOUBLE_PUNCH_REVEAL: {
+            durationMs: 1000,
+            steps: [
+              { atMs: 0, scale: 1.0 },
+              { atMs: 200, scale: 1.3 },
+              { atMs: 600, scale: 1.1 },
+              { atMs: 800, scale: 1.5 }
+            ]
           },
-          CONFRONTO: { 
-            durationMs: 800, 
-            steps: [ 
-              { atMs: 0, scale: 1.2 }, 
-              { atMs: 200, scale: 0.9 }, // Recua
-              { atMs: 400, scale: 1.4 }, // Avança
-              { atMs: 600, scale: 1.0 }  // Recua - movimento agressivo
-            ] 
-          },
-          EXCLUSIVA: { 
-            durationMs: 900, 
-            steps: [ 
-              { atMs: 0, scale: 1.0 }, 
-              { atMs: 300, scale: 1.2 }, // Foco preciso
-              { atMs: 600, scale: 1.45 } // Zoom final "exclusivo"
-            ] 
-          },
-          DENUNCIA: { 
-            durationMs: 1000, 
-            steps: [ 
-              { atMs: 0, scale: 1.1 }, 
-              { atMs: 200, scale: 1.3 }, // Primeiro impacto
-              { atMs: 400, scale: 1.1 }, // Respira
-              { atMs: 600, scale: 1.4 }, // Segundo impacto
-              { atMs: 800, scale: 1.2 }  // Impacto final
-            ] 
-          },
-          DESCOBERTA: { 
-            durationMs: 1400, 
-            steps: [ 
-              { atMs: 0, scale: 0.95 }, // Começa um pouco recuado
-              { atMs: 400, scale: 1.1 }, // Aproxima devagar
-              { atMs: 800, scale: 1.3 }, // Descobrindo...
-              { atMs: 1200, scale: 1.5 } // REVELAÇÃO final
-            ] 
-          },
-          
-          // Aleatório agora inclui efeitos jornalísticos
-          ALEATORIO: { durationMs: 900, steps: [ { atMs: 0, scale: 1.0 }, { atMs: 200, scale: 1.3 } ] },
+          // HARD_IN_4X (antigo Zoom 4x): punch rápido para 1.5 (aprox 4x relativo ao recorte)
+          HARD_IN_4X: {
+            durationMs: 1200,
+            steps: [
+              { atMs: 0, scale: 1.0 },
+              { atMs: 300, scale: 1.5 }
+            ]
+          }
         };
-        if (effect === 'ALEATORIO') {
-          const jornalisticos = ['BREAKING_NEWS','INVESTIGATIVO','REVELACAO','TESTEMUNHA','CONFRONTO','EXCLUSIVA','DENUNCIA','DESCOBERTA'];
-          const basicos = ['ZOOM_3X_IN','ZOOM_4X_IN','ZOOM_3X_OUT','ZOOM_4X_OUT','PULSE'];
-          const todos = [...jornalisticos, ...basicos];
-          const choose = pick(todos);
-          return map[choose];
-        }
-        return map[effect] ?? map['ZOOM_3X_IN'];
+        return map[effect] ?? map['STEP_IN_PRECISION'];
       };
 
       // Pré-carregar watermark se existir
@@ -1143,6 +1105,24 @@ const VideoSlidePage = () => {
       
       // Renderizar vinheta permanente se configurada
       if ((vinheteVideo) && endingDurationMs > 0) {
+        // 1) Se houver trilha sonora tocando, parar ao iniciar vinheta
+        if (audioElement) {
+          try { audioElement.pause(); } catch {}
+        }
+        // 2) Conectar áudio da vinheta ao stream principal
+        try {
+          if (!audioContext) audioContext = new AudioContext();
+          endingAudioElement = vinheteVideo; // usar o próprio elemento de vídeo como fonte de áudio
+          const endingSource = audioContext.createMediaElementSource(endingAudioElement);
+          const endingDest = audioContext.createMediaStreamDestination();
+          endingSource.connect(endingDest);
+          // adicionar faixas de áudio da vinheta ao stream (sem remover faixas de trilha já pausadas)
+          endingDest.stream.getAudioTracks().forEach(track => {
+            stream.addTrack(track);
+          });
+        } catch (e) {
+          console.warn('Falha ao conectar áudio da vinheta:', e);
+        }
         const vinheteFrames = Math.round((endingDurationMs / 1000) * FRAME_RATE);
         vinheteVideo.currentTime = 0;
         try { await vinheteVideo.play(); } catch {}
@@ -1200,7 +1180,7 @@ const VideoSlidePage = () => {
           if (delay > 0) await sleep(delay);
         }
         
-        // Parar vídeo da vinheta se estava rodando
+  // Parar vídeo da vinheta se estava rodando
         if (vinheteVideo) {
           vinheteVideo.pause();
           vinheteVideo.currentTime = 0;
