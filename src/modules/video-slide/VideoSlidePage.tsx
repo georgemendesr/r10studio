@@ -235,6 +235,7 @@ const VideoSlidePage = () => {
   const [compactView, setCompactView] = useState<boolean>(true);
   const [bulkEffectValue, setBulkEffectValue] = useState<string>('STEP_IN_PRECISION');
   const [bulkTextValue, setBulkTextValue] = useState<string>('');
+  const [bulkDurationValue, setBulkDurationValue] = useState<number>(5); // NOVO: duração em lote
   // Extração/segmentação
   const [articleUrl, setArticleUrl] = useState<string>('');
   const [articleText, setArticleText] = useState<string>('');
@@ -244,7 +245,8 @@ const VideoSlidePage = () => {
   // Carregar configurações permanentes do localStorage
   useEffect(() => {
   const savedWatermark = localStorage.getItem('r10-watermark');
-  const savedVinhete = localStorage.getItem('r10-vinhete');
+  const savedVinhete = localStorage.getItem('r10-vinheta');
+  const savedVinheteId = localStorage.getItem('r10-vinheta-id');
   // Sempre usar a marca d'água oficial do portal, ignorando customizações
   const officialWatermark = '/logo-r10-piaui.png';
   if (!protectedUnlocked) {
@@ -256,7 +258,12 @@ const VideoSlidePage = () => {
     
     if (savedVinhete) {
       setVinheteUrl(savedVinhete);
+      setEndingVideoUrl(savedVinhete);
       setUseEndingVideo(true);
+    }
+    
+    if (savedVinheteId) {
+      setSelectedEndingId(savedVinheteId);
     }
   }, []);
 
@@ -269,6 +276,8 @@ const VideoSlidePage = () => {
   const handleVinheteChange = (file: string) => {
     setVinheteUrl(file);
     setUseEndingVideo(!!file);
+    // Salvar vinheta no localStorage para persistência
+    try { localStorage.setItem('r10-vinheta', file); } catch {}
   };
 
   // Função para controlar prévia de áudio
@@ -352,16 +361,10 @@ const VideoSlidePage = () => {
   // Vinhetas de encerramento pré-cadastradas
   const predefinedEndings = [
     { 
-      id: 'none', 
-      name: '🚫 Sem Vinheta', 
-      file: '', 
-      description: 'Vídeo termina nas imagens' 
-    },
-    { 
       id: 'custom', 
       name: '📤 Upload Personalizada', 
       file: '', 
-      description: 'Sua vinheta personalizada' 
+      description: 'Sua vinheta personalizada - OBRIGATÓRIA' 
     }
   ];
 
@@ -496,7 +499,7 @@ const VideoSlidePage = () => {
     }
   };
 
-  // Aplicar vinheta selecionada
+  // Aplicar vinheta selecionada - VINHETA É OBRIGATÓRIA
   const applySelectedEnding = (endingId: string) => {
     setSelectedEndingId(endingId);
     const selectedEnding = predefinedEndings.find(ending => ending.id === endingId);
@@ -505,10 +508,12 @@ const VideoSlidePage = () => {
         setEndingVideoUrl(selectedEnding.file);
         setEndingVideoFile(null); // Limpar arquivo custom se houver
         setUseEndingVideo(true);
+        // Salvar vinheta selecionada no localStorage para persistência
+        try { localStorage.setItem('r10-vinheta', selectedEnding.file); } catch {}
+        try { localStorage.setItem('r10-vinheta-id', endingId); } catch {}
       } else {
-        setEndingVideoUrl("");
-        setEndingVideoFile(null);
-        setUseEndingVideo(false);
+        // Para opção 'custom', manter estado atual mas exigir upload
+        setUseEndingVideo(true);
       }
       toast.success(`Vinheta "${selectedEnding.name}" selecionada!`);
     }
@@ -545,6 +550,9 @@ const VideoSlidePage = () => {
       setEndingVideoUrl(url);
       setSelectedEndingId('custom');
       setUseEndingVideo(true);
+      // Salvar URL da vinheta personalizada no localStorage
+      try { localStorage.setItem('r10-vinheta', url); } catch {}
+      try { localStorage.setItem('r10-vinheta-id', 'custom'); } catch {}
       toast.success('Vinheta personalizada carregada!');
     }
   };
@@ -650,6 +658,20 @@ const VideoSlidePage = () => {
     ));
   };
 
+  // NOVO: Função para mover slides
+  const moveSlide = (fromIndex: number, toIndex: number) => {
+    const newSlides = [...slides];
+    const [movedSlide] = newSlides.splice(fromIndex, 1);
+    newSlides.splice(toIndex, 0, movedSlide);
+    setSlides(newSlides);
+  };
+
+  // NOVO: Função para aplicar duração a todos os slides
+  const applyDurationToAll = (duration: number) => {
+    setSlides(prev => prev.map(slide => ({ ...slide, durationSec: duration })));
+    toast.success(`Duração de ${duration}s aplicada a todos os slides`);
+  };
+
   const readFileAsDataURL = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -662,6 +684,10 @@ const VideoSlidePage = () => {
     const files = event.target.files;
     if (files && files.length > 0) {
       await processMultipleFiles(Array.from(files), id);
+      // CORREÇÃO: Força atualização da interface limpando e resetando o input
+      event.target.value = '';
+      // Força re-render
+      setSlides(prev => [...prev]);
     }
   };
 
@@ -776,8 +802,17 @@ const VideoSlidePage = () => {
       toast.error("Por favor, adicione mídia (imagem ou vídeo) a todos os slides");
       return;
     }
-    if (!endingVideoUrl) {
-      toast.error("Envie a vinheta final (vídeo) na Área Protegida antes de gerar");
+
+    // Debug: verificar configuração da vinheta
+    console.log('🎬 Configuração da vinheta ao gerar:');
+    console.log('- useEndingVideo:', useEndingVideo);
+    console.log('- endingVideoUrl:', endingVideoUrl);
+    console.log('- endingVideoFile:', endingVideoFile);
+    console.log('- selectedEndingId:', selectedEndingId);
+
+    // VINHETA É OBRIGATÓRIA - todos os vídeos devem ter
+    if (!endingVideoUrl && !endingVideoFile) {
+      toast.error("⚠️ VINHETA OBRIGATÓRIA: Faça upload de uma vinheta final para gerar o vídeo");
       return;
     }
 
@@ -1001,8 +1036,11 @@ const VideoSlidePage = () => {
 
       // Pré-carregar vinheta (apenas vídeo)
       let vinheteVideo: HTMLVideoElement | null = null;
-      const finalVinheteUrl = endingVideoUrl;
-      if (finalVinheteUrl) {
+      const finalVinheteUrl = useEndingVideo && endingVideoUrl ? endingVideoUrl : 
+                             useEndingVideo && endingVideoFile ? URL.createObjectURL(endingVideoFile) : '';
+      
+      if (finalVinheteUrl && useEndingVideo) {
+        console.log('🎬 Carregando vinheta final:', finalVinheteUrl);
         vinheteVideo = document.createElement('video');
         vinheteVideo.src = finalVinheteUrl;
         vinheteVideo.muted = true;
@@ -1010,12 +1048,19 @@ const VideoSlidePage = () => {
         try {
           await new Promise<void>((res) => {
             if (!vinheteVideo) return res();
-            vinheteVideo.oncanplay = () => res();
-            vinheteVideo.onerror = () => res();
+            vinheteVideo.oncanplay = () => {
+              console.log(`✅ Vinheta carregada - duração: ${vinheteVideo!.duration}s`);
+              res();
+            };
+            vinheteVideo.onerror = (e) => {
+              console.error('❌ Erro ao carregar vinheta:', e);
+              res();
+            };
             vinheteVideo.load();
           });
         } catch (e) {
           console.warn('Falha ao carregar vinheta de vídeo:', e);
+          vinheteVideo = null;
         }
       }
 
@@ -1297,13 +1342,15 @@ const VideoSlidePage = () => {
       const totalVideoMs = slides.reduce((acc, slide) => acc + (slide.durationSec || 5) * 1000, 0);
       // Duração da vinheta: usar a duração do vídeo enviado
       let endingDurationMs = 0;
-      if (useEndingVideo && endingVideoUrl && vinheteVideo && !isNaN(vinheteVideo.duration) && vinheteVideo.duration > 0) {
+      if (useEndingVideo && vinheteVideo && !isNaN(vinheteVideo.duration) && vinheteVideo.duration > 0) {
         endingDurationMs = Math.round(vinheteVideo.duration * 1000);
+        console.log(`🎬 Vinheta final configurada - duração: ${endingDurationMs}ms`);
       }
       const finalDurationMs = totalVideoMs + endingDurationMs;
       
       // Renderizar vinheta permanente se configurada
-      if ((vinheteVideo) && endingDurationMs > 0) {
+      if (useEndingVideo && vinheteVideo && endingDurationMs > 0) {
+        console.log('🎬 Iniciando renderização da vinheta final...');
         // 1) Se houver trilha sonora tocando, parar ao iniciar vinheta
         if (audioElement) {
           try { audioElement.pause(); } catch {}
@@ -1520,6 +1567,26 @@ const VideoSlidePage = () => {
                     toast.success('Texto aplicado a todos os slides');
                   }}
                 >Aplicar texto a todos</Button>
+                
+                {/* NOVO: Controle de duração em lote */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={bulkDurationValue}
+                    onChange={(e) => setBulkDurationValue(Number(e.target.value))}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm w-20"
+                  />
+                  <span className="text-xs text-muted-foreground">s</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => applyDurationToAll(bulkDurationValue)}
+                  >
+                    Aplicar duração a todos
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -1551,14 +1618,35 @@ const VideoSlidePage = () => {
                   <div key={slide.id} className="space-y-3 p-3 border border-border rounded-lg bg-secondary/20">
                     <div className="flex items-center justify-between">
                       <h3 className="font-semibold">Slide {index + 1}</h3>
-                      <Button
-                        onClick={() => removeSlide(slide.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {/* NOVO: Botões para mover slides */}
+                        <Button
+                          onClick={() => moveSlide(index, Math.max(0, index - 1))}
+                          variant="ghost"
+                          size="sm"
+                          disabled={index === 0}
+                          title="Mover para cima"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          onClick={() => moveSlide(index, Math.min(slides.length - 1, index + 1))}
+                          variant="ghost"
+                          size="sm"
+                          disabled={index === slides.length - 1}
+                          title="Mover para baixo"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          onClick={() => removeSlide(slide.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
@@ -1576,17 +1664,31 @@ const VideoSlidePage = () => {
                             <>
                               {compactView ? (
                                 slide.mediaType === 'video' && slide.video ? (
-                                  <video
-                                    src={slide.video}
-                                    className="w-full max-h-48 object-contain rounded border bg-black"
-                                    controls
-                                  />
+                                  <div className="relative">
+                                    <video
+                                      src={slide.video}
+                                      className="w-full h-32 object-cover rounded border bg-black"
+                                      muted
+                                    />
+                                    <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                                      📹 VÍDEO
+                                    </div>
+                                  </div>
+                                ) : slide.image ? (
+                                  <div className="relative">
+                                    <img
+                                      src={slide.image}
+                                      alt={`Slide ${index + 1}`}
+                                      className="w-full h-32 object-cover rounded border bg-gray-100"
+                                    />
+                                    <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                                      🖼️ IMAGEM
+                                    </div>
+                                  </div>
                                 ) : (
-                                  <img
-                                    src={slide.image}
-                                    alt={`Slide ${index + 1}`}
-                                    className="w-full max-h-48 object-contain rounded border bg-white"
-                                  />
+                                  <div className="w-full h-32 bg-gray-100 border-2 border-dashed border-gray-300 rounded flex items-center justify-center">
+                                    <span className="text-gray-400 text-sm">Sem mídia</span>
+                                  </div>
                                 )
                               ) : (
                                 slide.mediaType === 'video' && slide.video ? (
