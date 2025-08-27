@@ -914,8 +914,11 @@ const VideoSlidePage = () => {
   // totalFrames é definido após o cálculo de durationMsEffective
         
   // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
-        let textLines: string[] = [];
-        let totalCharsAll = 0;
+  let textLines: string[] = [];
+  let totalCharsAll = 0;
+  // Pré-cálculo: larguras cumulativas por caractere para cada linha
+  // Ex.: textWidths[lineIndex][k] = largura de textLines[lineIndex].slice(0, k)
+  let textWidths: number[][] = [];
         if (captionText) {
           const SAFE_MARGIN = 50; // margem de segurança em cada lado
           const baseFont = 48;
@@ -964,6 +967,19 @@ const VideoSlidePage = () => {
           }
           if (current.length > 0) textLines.push(current);
           totalCharsAll = textLines.reduce((acc, line) => acc + line.length, 0);
+          // Construir vetores de larguras cumulativas por caractere
+          textWidths = textLines.map(line => {
+            const widths: number[] = [0]; // base 0 para k=0
+            let last = 0;
+            // medição incremental por caractere
+            for (let k = 1; k <= line.length; k++) {
+              const w = ctx.measureText(line.slice(0, k)).width;
+              // evitar regressão (caso exotic), garantir não-decrescente
+              last = Math.max(last, w);
+              widths.push(last);
+            }
+            return widths;
+          });
         }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -980,7 +996,11 @@ const VideoSlidePage = () => {
   const totalFrames = Math.max(1, Math.round(durationMsEffective / FRAME_MS));
   console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${(durationMsEffective/1000).toFixed(2)}s a ${FRAME_RATE}fps)`);
 
-        const slideStart = Date.now();
+  const slideStart = Date.now();
+  // Typewriter: controle por frame para evitar saltos de caracteres
+  let typedCharCount = 0; // total de caracteres já revelados
+  let typedAcc = 0; // acumulador fracionário por frame
+  const charsPerFrameIdeal = FRAME_MS / CHAR_TIME_MS; // ~0.95 char/frame a 30fps
         for (let frame = 0; frame < totalFrames; frame++) {
           // Timing: baseado em tempo real e alvo de 30fps
           const targetMs = frame * FRAME_MS;
@@ -1140,16 +1160,19 @@ const VideoSlidePage = () => {
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-            // 2) Texto (typewriter) inicia após a linha completar
-            const typewriterStartDelayMs = preLineDurationMs; // texto só aparece após a barra
-            const elapsedForText = Math.max(0, elapsedMs - typewriterStartDelayMs);
-            const typewriterDurationMs = TYPEWRITER_DURATION_MS;
-            // Contagem discreta: 1 caractere a cada CHAR_TIME_MS (mais estável visualmente)
-            const totalCharsToShow = Math.min(
-              totalCharsAll,
-              Math.floor(elapsedForText / CHAR_TIME_MS)
-            );
-            let remaining = totalCharsToShow;
+              // 2) Texto (typewriter) inicia após a linha completar
+              const typewriterStartDelayMs = preLineDurationMs; // texto só aparece após a barra
+              if (elapsedMs >= typewriterStartDelayMs && typedCharCount < totalCharsAll) {
+                // Avança no máximo 1 caractere por frame para não "pular"
+                typedAcc += charsPerFrameIdeal;
+                if (typedAcc >= 1) {
+                  const add = 1; // limite de 1 por frame
+                  typedCharCount = Math.min(totalCharsAll, typedCharCount + add);
+                  typedAcc -= add;
+                }
+              }
+              const totalCharsToShow = typedCharCount;
+              let remaining = totalCharsToShow;
 
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
               const line = textLines[lineIndex];
@@ -1159,8 +1182,9 @@ const VideoSlidePage = () => {
               remaining -= showForLine;
 
               if (renderText.length > 0) {
-                // Como a linha já foi pré-quebrada para caber, basta medir e desenhar
-                const textWidth = ctx.measureText(renderText).width;
+                // Usar largura pré-calculada ao invés de medir a cada frame
+                const wTable = textWidths[lineIndex] || [0];
+                const textWidth = wTable[Math.min(renderText.length, wTable.length - 1)] || 0;
                 const rectWidth = Math.min(textWidth + padX * 2, maxRectWidthGlobal);
                 if (rectWidth > 0) {
                   ctx.fillStyle = '#cb403a';
