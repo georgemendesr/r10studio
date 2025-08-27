@@ -12,7 +12,10 @@ import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtr
 
 interface Slide {
   id: string;
-  image: string;
+  // mídia do slide: imagem (dataURL/URL) ou vídeo (URL)
+  mediaType?: 'image' | 'video';
+  image?: string;
+  video?: string;
   caption: string;
   effect: string;
   textAnimation: string;
@@ -454,6 +457,7 @@ const VideoSlidePage = () => {
       ...prev,
       {
         id: uuidv4(),
+        mediaType: 'image',
         image: "",
         caption: "",
         effect: "STEP_IN_PRECISION",
@@ -491,46 +495,71 @@ const VideoSlidePage = () => {
   };
 
   const processMultipleFiles = async (files: File[], targetSlideId?: string) => {
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    
-    if (imageFiles.length === 0) {
-      toast.error('Por favor, selecione apenas arquivos de imagem');
+    const mediaFiles = files.filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'));
+    if (mediaFiles.length === 0) {
+      toast.error('Selecione imagens (.jpg, .png, .webp) ou vídeos (.mp4, .webm)');
       return;
     }
 
     // Limite razoável para performance (máximo 20 slides)
-    if (!targetSlideId && slides.length + imageFiles.length > 20) {
-      toast.error(`Máximo de 20 slides permitidos para manter boa performance. Você tem ${slides.length} e está tentando adicionar ${imageFiles.length}.`);
+    if (!targetSlideId && slides.length + mediaFiles.length > 20) {
+      toast.error(`Máximo de 20 slides permitidos para manter boa performance. Você tem ${slides.length} e está tentando adicionar ${mediaFiles.length}.`);
       return;
     }
 
-    toast.loading(`Processando ${imageFiles.length} imagem(ns)...`, { id: "processing" });
+  toast.loading(`Processando ${mediaFiles.length} arquivo(s)...`, { id: "processing" });
 
   try {
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        const dataUrl = await readFileAsDataURL(file);
-        
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const file = mediaFiles[i];
+        const isVideo = file.type.startsWith('video/');
+        const labelIndex = slides.length + i + 1;
         if (targetSlideId && i === 0) {
-          // Se foi especificado um slide específico, atualizar apenas o primeiro arquivo
-          updateSlide(targetSlideId, 'image', dataUrl);
+          if (isVideo) {
+            const url = URL.createObjectURL(file);
+            updateSlide(targetSlideId, 'mediaType', 'video');
+            updateSlide(targetSlideId, 'video', url);
+            updateSlide(targetSlideId, 'image', undefined as unknown as string);
+          } else {
+            const dataUrl = await readFileAsDataURL(file);
+            updateSlide(targetSlideId, 'mediaType', 'image');
+            updateSlide(targetSlideId, 'image', dataUrl);
+            updateSlide(targetSlideId, 'video', undefined as unknown as string);
+          }
         } else {
-          // Para arquivos adicionais ou drag & drop, criar novos slides
-          const newSlide: Slide = {
-            id: uuidv4(),
-            image: dataUrl,
-            caption: `Slide ${slides.length + i + 1}`,
-            effect: "STEP_IN_PRECISION",
-            textAnimation: "typewriter",
-            durationSec: 5,
-            alignH: 'center',
-            alignV: 'center',
-          };
-          setSlides(prev => [...prev, newSlide]);
+          if (isVideo) {
+            const url = URL.createObjectURL(file);
+            const newSlide: Slide = {
+              id: uuidv4(),
+              mediaType: 'video',
+              video: url,
+              caption: `Slide ${labelIndex}`,
+              effect: "STEP_IN_PRECISION",
+              textAnimation: "typewriter",
+              durationSec: 5,
+              alignH: 'center',
+              alignV: 'center',
+            };
+            setSlides(prev => [...prev, newSlide]);
+          } else {
+            const dataUrl = await readFileAsDataURL(file);
+            const newSlide: Slide = {
+              id: uuidv4(),
+              mediaType: 'image',
+              image: dataUrl,
+              caption: `Slide ${labelIndex}`,
+              effect: "STEP_IN_PRECISION",
+              textAnimation: "typewriter",
+              durationSec: 5,
+              alignH: 'center',
+              alignV: 'center',
+            };
+            setSlides(prev => [...prev, newSlide]);
+          }
         }
       }
       
-      toast.success(`${imageFiles.length} imagem(ns) carregada(s)`, { id: "processing" });
+      toast.success(`${mediaFiles.length} arquivo(s) carregado(s)`, { id: "processing" });
     } catch (error) {
       console.error('Erro ao processar imagens:', error);
       toast.error('Erro ao processar imagens', { id: "processing" });
@@ -569,8 +598,11 @@ const VideoSlidePage = () => {
       toast.error("Por favor, adicione pelo menos um slide");
       return;
     }
-    if (slides.some(slide => !slide.image)) {
-      toast.error("Por favor, adicione imagens a todos os slides");
+    if (slides.some(slide => {
+      const isVid = (slide.mediaType || 'image') === 'video';
+      return isVid ? !slide.video : !slide.image;
+    })) {
+      toast.error("Por favor, adicione mídia (imagem ou vídeo) a todos os slides");
       return;
     }
     if (!endingVideoUrl) {
@@ -815,19 +847,41 @@ const VideoSlidePage = () => {
       }
 
   // Renderizar cada slide - TIMING E EFEITOS CORRIGIDOS
-      const startTime = performance.now();
-      const preloadedImages: HTMLImageElement[] = [];
+  const startTime = performance.now();
+  const preloadedImages: (HTMLImageElement | null)[] = [];
+  const preloadedVideos: (HTMLVideoElement | null)[] = [];
       
       // Pré-carregar todas as imagens
       for (let i = 0; i < slides.length; i++) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = slides[i].image;
-        });
-        preloadedImages[i] = img;
+        const s = slides[i];
+        if ((s.mediaType || 'image') === 'video' && s.video) {
+          const v = document.createElement('video');
+          v.src = s.video;
+          v.muted = true;
+          v.loop = false;
+          v.preload = 'auto';
+          await new Promise<void>((res) => {
+            const onReady = () => { v.oncanplay = null; v.onerror = null; res(); };
+            v.oncanplay = onReady;
+            v.onerror = onReady;
+            try { v.load(); } catch {}
+          });
+          preloadedVideos[i] = v;
+          preloadedImages[i] = null;
+        } else if (s.image) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = s.image as string;
+          });
+          preloadedImages[i] = img;
+          preloadedVideos[i] = null;
+        } else {
+          preloadedImages[i] = null;
+          preloadedVideos[i] = null;
+        }
       }
 
       // Parâmetros de drift sutil por slide (movimento suave e aleatório após o punch)
@@ -845,7 +899,9 @@ const VideoSlidePage = () => {
 
   for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
-        const durationSecInput = slide.durationSec || 5;
+  const isVideo = (slide.mediaType || 'image') === 'video' && !!preloadedVideos[i];
+  const videoEl = isVideo ? preloadedVideos[i]! : null;
+  const durationSecInput = slide.durationSec || (isVideo && videoEl && !isNaN(videoEl.duration) && videoEl.duration > 0 ? Math.min(videoEl.duration, 10) : 5);
         const captionText = keepFirstCaption ? (slides[0]?.caption || '') : (slide.caption || '');
         const img = preloadedImages[i];
         
@@ -943,7 +999,7 @@ const VideoSlidePage = () => {
           }
           
           // Desenhar imagem com zoom e drift suave após o punch (cortes secos + movimento contínuo)
-          const imgAspect = img.width / img.height;
+          const mediaAspect = isVideo && videoEl ? (videoEl.videoWidth / videoEl.videoHeight) : (img.width / img.height);
           const canvasAspect = canvas.width / canvas.height;
           
           // Garantir que não apareçam bordas pretas: nossa base 1.0 já cobre o canvas (pela lógica abaixo)
@@ -961,14 +1017,14 @@ const VideoSlidePage = () => {
           }
 
           let drawW, drawH;
-          if (imgAspect > canvasAspect) {
+          if (mediaAspect > canvasAspect) {
             // Imagem mais larga: ajustar pela altura
             drawH = canvas.height * drawScale;
-            drawW = drawH * imgAspect;
+            drawW = drawH * mediaAspect;
           } else {
             // Imagem mais alta: ajustar pela largura
             drawW = canvas.width * drawScale;
-            drawH = drawW / imgAspect;
+            drawH = drawW / mediaAspect;
           }
           
           // Alinhamento corrigido
@@ -998,27 +1054,37 @@ const VideoSlidePage = () => {
             dy = clamp(dy + shiftY, canvas.height - drawH, 0);
           }
           
-          ctx.drawImage(img, dx, dy, drawW, drawH);
+          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo
+          if (isVideo && videoEl) {
+            const tSec = Math.min(videoEl.duration || durationSecInput, elapsedMs / 1000);
+            try { videoEl.currentTime = tSec; } catch {}
+            try { ctx.drawImage(videoEl, dx, dy, drawW, drawH); } catch {}
+          } else {
+            ctx.drawImage(img, dx, dy, drawW, drawH);
+          }
           
           // CORRIGIDO: Fade entre slides
           if (useFade && i > 0 && frame < 15) { // 15 frames = 0.5s de fade
             const prevImg = preloadedImages[i - 1];
+            const prevVid = preloadedVideos[i - 1];
             const fadeAlpha = (15 - frame) / 15; // De 1.0 a 0.0
             ctx.globalAlpha = fadeAlpha;
-            
-            // Mesmo cálculo de escala para imagem anterior (sem zoom)
-            const prevImgAspect = prevImg.width / prevImg.height;
-            let prevDrawW, prevDrawH;
-            if (prevImgAspect > canvasAspect) {
-              prevDrawH = canvas.height;
-              prevDrawW = prevDrawH * prevImgAspect;
-            } else {
-              prevDrawW = canvas.width;
-              prevDrawH = prevDrawW / prevImgAspect;
+            // Mesmo cálculo de escala para mídia anterior (sem punch)
+            if (prevVid) {
+              const a = prevVid.videoWidth / prevVid.videoHeight;
+              let w, h;
+              if (a > canvasAspect) { h = canvas.height; w = h * a; } else { w = canvas.width; h = w / a; }
+              const px = (canvas.width - w) / 2;
+              const py = (canvas.height - h) / 2;
+              try { ctx.drawImage(prevVid, px, py, w, h); } catch {}
+            } else if (prevImg) {
+              const a = prevImg.width / prevImg.height;
+              let w, h;
+              if (a > canvasAspect) { h = canvas.height; w = h * a; } else { w = canvas.width; h = w / a; }
+              const px = (canvas.width - w) / 2;
+              const py = (canvas.height - h) / 2;
+              ctx.drawImage(prevImg, px, py, w, h);
             }
-            const prevDx = (canvas.width - prevDrawW) / 2;
-            const prevDy = (canvas.height - prevDrawH) / 2;
-            ctx.drawImage(prevImg, prevDx, prevDy, prevDrawW, prevDrawH);
             ctx.globalAlpha = 1.0;
           }
 
@@ -1405,39 +1471,55 @@ const VideoSlidePage = () => {
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
-                      {/* Image Upload */}
+                      {/* Mídia do Slide: imagem ou vídeo */}
                       <div>
                         <input
                           type="file"
-                          accept=".jpg,.jpeg,.png,.webp"
+                          accept=".jpg,.jpeg,.png,.webp,.mp4,.webm"
                           onChange={(e) => handleImageUpload(slide.id, e)}
                           id={`image-${slide.id}`}
                           className="hidden"
                         />
                         <div className="mt-1 space-y-2">
-                          {slide.image ? (
+                          {(slide.mediaType === 'video' && slide.video) || (slide.mediaType !== 'video' && slide.image) ? (
                             <>
                               {compactView ? (
-                                <img
-                                  src={slide.image}
-                                  alt={`Slide ${index + 1}`}
-                                  className="w-full max-h-48 object-contain rounded border bg-white"
-                                />
+                                slide.mediaType === 'video' && slide.video ? (
+                                  <video
+                                    src={slide.video}
+                                    className="w-full max-h-48 object-contain rounded border bg-black"
+                                    controls
+                                  />
+                                ) : (
+                                  <img
+                                    src={slide.image}
+                                    alt={`Slide ${index + 1}`}
+                                    className="w-full max-h-48 object-contain rounded border bg-white"
+                                  />
+                                )
                               ) : (
-                                <PunchZoomYoYo
-                                  image={slide.image}
-                                  caption={slide.caption || "Preview"}
-                                  effect={slide.effect}
-                                  textAnimation={slide.textAnimation}
-                                  alignH={slide.alignH}
-                                  alignV={slide.alignV}
-                                />
+                                slide.mediaType === 'video' && slide.video ? (
+                                  <video
+                                    src={slide.video}
+                                    className="w-full rounded border bg-black"
+                                    controls
+                                  />
+                                ) : (
+                                  <PunchZoomYoYo
+                                    image={slide.image as string}
+                                    caption={slide.caption || "Preview"}
+                                    effect={slide.effect}
+                                    textAnimation={slide.textAnimation}
+                                    alignH={slide.alignH}
+                                    alignV={slide.alignV}
+                                  />
+                                )
                               )}
                               <div>
                                 <Button asChild variant="outline" size="sm">
                                   <label htmlFor={`image-${slide.id}`} className="cursor-pointer">
                                     <UploadIcon className="w-4 h-4 mr-2" />
-                                    Trocar imagem
+                                    Trocar mídia
                                   </label>
                                 </Button>
                               </div>
@@ -1446,7 +1528,7 @@ const VideoSlidePage = () => {
                             <Button asChild variant="outline" size="sm">
                               <label htmlFor={`image-${slide.id}`} className="cursor-pointer">
                                 <UploadIcon className="w-4 h-4 mr-2" />
-                                Escolher Arquivo
+                                Escolher mídia (imagem ou vídeo)
                               </label>
                             </Button>
                           )}
