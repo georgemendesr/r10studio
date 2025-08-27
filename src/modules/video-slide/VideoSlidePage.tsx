@@ -10,19 +10,25 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
-// SOLUÇÃO SIMPLES - só remove o measureText do loop
+// CORREÇÃO - Detecta slide novo de forma confiável
 
-// Variáveis globais simples
+// Variáveis globais
 let currentSlideText = '';
 let currentCharCount = 0;
-let textLines: string[] = []; // Pre-calculado uma vez só
+let textLines: string[] = [];
+let lastSlideIndex = -1; // CRÍTICO: rastreia qual slide está ativo
+let textWasSetup = false; // Evita setup duplo
 
-// Quando INICIA um novo slide com texto (chame uma vez só):
-function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number) {
+// Setup do texto (uma vez por slide)
+function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number, slideIndex: number) {
+  console.log('=== SETUP SLIDE', slideIndex, '===', text.substring(0, 30));
+  
   currentSlideText = text;
   currentCharCount = 0;
+  lastSlideIndex = slideIndex;
+  textWasSetup = true;
   
-  // PRE-CALCULA as linhas UMA VEZ SÓ (sem fazer no loop)
+  // Pre-calcula linhas uma vez só
   textLines = [];
   const words = text.split(' ');
   let currentLine = '';
@@ -38,17 +44,19 @@ function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: n
   }
   if (currentLine) textLines.push(currentLine);
   
-  console.log('Setup text:', text.substring(0, 50), 'Lines:', textLines.length);
+  console.log('Linhas criadas:', textLines.length, 'Total chars:', text.length);
 }
 
-// No loop de render (chame a cada frame):
+// Render do typewriter
 function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40) {
-  // Avança 1 caractere por frame
+  if (!textWasSetup) return;
+  
+  // Avança 1 char por frame
   if (currentCharCount < currentSlideText.length) {
     currentCharCount++;
   }
   
-  // Desenha o texto visível até agora COM FUNDO VERMELHO
+  // Desenha texto até currentCharCount COM FUNDO VERMELHO
   let charsSoFar = 0;
   let yOffset = 0;
   
@@ -85,6 +93,30 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
     
     charsSoFar += charsInThisLine;
     yOffset += lineHeight;
+  }
+}
+
+// Função principal para renderizar texto do slide
+function renderSlideText(ctx: CanvasRenderingContext2D, slideIndex: number, captionText: string, elapsedMs: number, typewriterStartDelayMs: number, textLeft: number, y: number) {
+  // Se não tem texto, pula
+  if (!captionText) return;
+  
+  // DETECTA SLIDE NOVO - compara índice do slide
+  if (slideIndex !== lastSlideIndex) {
+    console.log('NOVO SLIDE DETECTADO:', slideIndex, 'anterior:', lastSlideIndex);
+    textWasSetup = false; // Marca que precisa setup
+  }
+  
+  // Se chegou na hora do texto E ainda não fez setup
+  if (elapsedMs >= typewriterStartDelayMs && !textWasSetup) {
+    ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
+    setupSlideText(captionText, ctx, 1080 - 100 - 40, slideIndex); // canvas.width - margins
+  }
+  
+  // Renderiza se já fez setup
+  if (textWasSetup && elapsedMs >= typewriterStartDelayMs) {
+    ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
+    renderTypewriter(ctx, textLeft, y);
   }
 }
 
@@ -1165,20 +1197,9 @@ const VideoSlidePage = () => {
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-            // 2) Texto (typewriter) usando função simples
+            // 2) Texto (typewriter) usando detecção robusta de slide
             const typewriterStartDelayMs = preLineDurationMs;
-            if (elapsedMs >= typewriterStartDelayMs) {
-              if (!typewriterStarted) {
-                typewriterStarted = true;
-                // Setup do texto UMA VEZ SÓ quando começa
-                ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
-                setupSlideText(captionText, ctx, canvas.width - 100 - 40);
-              }
-              
-              // Renderizar texto com função simples
-              ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
-              renderTypewriter(ctx, textLeft, y);
-            }
+            renderSlideText(ctx, i, captionText, elapsedMs, typewriterStartDelayMs, textLeft, y);
 
             ctx.restore();
           }
