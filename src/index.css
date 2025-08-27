@@ -150,7 +150,7 @@ All colors MUST be HSL.
   }
   
   .text-animate-typewriter {
-    animation: typewriter 2s steps(40) infinite;
+    animation: typewriter 2s steps(40) forwards;
     border-right: 2px solid #ef4444;
   }
   
@@ -203,10 +203,10 @@ All colors MUST be HSL.
 }
 
 @keyframes typewriter {
-  0%, 50% {
+  0% {
     border-right-color: transparent;
   }
-  51%, 100% {
+  100% {
     border-right-color: #ef4444;
   }
 }
