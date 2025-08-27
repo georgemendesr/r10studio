@@ -10,6 +10,118 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
+// Sistema de renderização de texto otimizado
+class TextRenderer {
+  private textCache = new Map<string, HTMLCanvasElement>();
+
+  renderLineToCanvas(text: string, font: string, color: string, maxWidth: number, padding = 20): HTMLCanvasElement {
+    const cacheKey = `${text}|${font}|${color}|${maxWidth}|${padding}`;
+    
+    if (this.textCache.has(cacheKey)) {
+      return this.textCache.get(cacheKey)!;
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Falha ao criar contexto 2D');
+    
+    ctx.font = font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    // Quebra texto em linhas respeitando maxWidth
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      if (ctx.measureText(testLine).width <= maxWidth - padding * 2) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    
+    // Configura canvas baseado no número de linhas
+    const fontSize = parseInt(font.match(/(\d+)px/)?.[1] || '48');
+    const rectHeight = fontSize + Math.round(fontSize * 0.5);
+    const lineGap = Math.max(8, Math.round(fontSize * 0.1));
+    const totalHeight = lines.length * (rectHeight + lineGap);
+    
+    canvas.width = maxWidth;
+    canvas.height = totalHeight;
+    
+    // Redesenha após redimensionar
+    ctx.font = font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    
+    // Desenha cada linha com fundo vermelho e texto branco
+    lines.forEach((line, index) => {
+      const y = index * (rectHeight + lineGap);
+      const textWidth = ctx.measureText(line).width;
+      const rectWidth = Math.min(textWidth + padding * 2, maxWidth);
+      
+      // Fundo vermelho
+      ctx.fillStyle = '#cb403a';
+      ctx.fillRect(0, y, rectWidth, rectHeight);
+      
+      // Texto branco
+      ctx.fillStyle = color;
+      ctx.fillText(line, padding, y + rectHeight / 2);
+    });
+    
+    this.textCache.set(cacheKey, canvas);
+    return canvas;
+  }
+}
+
+// Sistema de typewriter com controle por frame
+class TypewriterRenderer {
+  private textRenderer = new TextRenderer();
+  private currentCharCount = 0;
+  private targetText = '';
+  private font = '';
+  private color = '';
+  private maxWidth = 0;
+
+  setup(text: string, font: string, color: string, maxWidth: number) {
+    this.targetText = text;
+    this.font = font;
+    this.color = color;
+    this.maxWidth = maxWidth;
+    this.currentCharCount = 0;
+  }
+
+  advance() {
+    if (this.currentCharCount < this.targetText.length) {
+      this.currentCharCount++;
+    }
+  }
+
+  render(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    if (this.currentCharCount === 0) return;
+
+    const visibleText = this.targetText.substring(0, this.currentCharCount);
+    const textCanvas = this.textRenderer.renderLineToCanvas(
+      visibleText, 
+      this.font, 
+      this.color, 
+      this.maxWidth,
+      20 // padding
+    );
+
+    ctx.drawImage(textCanvas, x, y);
+  }
+
+  isComplete() {
+    return this.currentCharCount >= this.targetText.length;
+  }
+}
+
 interface Slide {
   id: string;
   // mídia do slide: imagem (dataURL/URL) ou vídeo (URL)
@@ -638,6 +750,8 @@ const VideoSlidePage = () => {
       const FRAME_MS = 1000 / FRAME_RATE; // 33.333ms exatos
   const stream = canvas.captureStream(FRAME_RATE);
   const videoTrack = (stream.getVideoTracks()[0] as any);
+  // Tentar fixar 30 fps no track para maximizar qualidade/constância
+  try { await videoTrack?.applyConstraints?.({ frameRate: 30 }); } catch {}
   const requestFrameIfSupported = () => {
         try { if (videoTrack && typeof videoTrack.requestFrame === 'function') videoTrack.requestFrame(); } catch {}
       };
@@ -680,7 +794,7 @@ const VideoSlidePage = () => {
         });
       }
       
-      // Preferir H.264 (MP4) com fallback para WebM - bitrate máximo
+      // Preferir H.264 (MP4) original que gerava 34MB - configurações restauradas
       const mimeCandidates = [
         'video/mp4;codecs=avc1.42E01E',
         'video/webm;codecs=vp9',
@@ -691,7 +805,7 @@ const VideoSlidePage = () => {
       const chosenMime = supportedMime || 'video/webm;codecs=vp8';
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: chosenMime,
-        videoBitsPerSecond: 15000000 // Aumentado de 12M para 15M para máxima qualidade
+        videoBitsPerSecond: 15000000 // Bitrate original que gerava 34MB
       });      const chunks: BlobPart[] = [];
       
       mediaRecorder.ondataavailable = (event) => {
@@ -913,61 +1027,18 @@ const VideoSlidePage = () => {
         
   // totalFrames é definido após o cálculo de durationMsEffective
         
-  // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
-  let textLines: string[] = [];
-  let totalCharsAll = 0;
-  // Pré-cálculo leve: largura total de cada linha
-  let lineWidths: number[] = [];
+  // Typewriter renderer para este slide
+  const typewriterRenderer = new TypewriterRenderer();
+  let typewriterSetup = false;
         if (captionText) {
-          const SAFE_MARGIN = 50; // margem de segurança em cada lado
+          // Preparar fonte e configurações para o typewriter
+          const SAFE_MARGIN = 50;
           const baseFont = 48;
-          const fontSizePX = Math.round(baseFont * 1.2); // +20%
-          const padXPre = 20; // padding do retângulo vermelho
-          ctx.font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
-          // largura máxima para o texto (área útil do retângulo alinhado à margem direita)
-          const maxW = canvas.width - (SAFE_MARGIN * 2) - (padXPre * 2);
+          const fontSizePX = Math.round(baseFont * 1.2);
+          const font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
+          const maxW = canvas.width - (SAFE_MARGIN * 2) - 40; // padding
 
-          // Wrap robusto: preserva espaços e quebra palavras muito longas por caracteres
-          const tokens = captionText.split(/(\s+)/);
-          let current = '';
-          const isWhitespace = (s: string) => /^\s+$/.test(s);
-          for (const t of tokens) {
-            const candidate = current + t;
-            const width = ctx.measureText(candidate).width;
-            if (width <= maxW) {
-              current = candidate;
-              continue;
-            }
-            // Se estourou e já temos algo na linha, envia a linha atual e reavalia o token
-            if (current.length > 0) {
-              textLines.push(current);
-              current = '';
-              // Reprocessar o mesmo token agora com linha vazia
-              if (isWhitespace(t)) {
-                // espaço líder pode ser descartado
-                continue;
-              }
-            }
-            // Se a palavra sozinha já não cabe, quebrar por caracteres
-            if (!isWhitespace(t)) {
-              let chunk = '';
-              for (const ch of t) {
-                const testChunk = chunk + ch;
-                if (ctx.measureText(testChunk).width <= maxW) {
-                  chunk = testChunk;
-                } else {
-                  if (chunk.length > 0) textLines.push(chunk);
-                  chunk = ch; // começa próximo pedaço
-                }
-              }
-              // o que sobrou vira início de próxima linha
-              current = chunk;
-            }
-          }
-          if (current.length > 0) textLines.push(current);
-          totalCharsAll = textLines.reduce((acc, line) => acc + line.length, 0);
-          // Medir 1x por linha
-          lineWidths = textLines.map(line => ctx.measureText(line).width);
+          typewriterRenderer.setup(captionText, font, '#ffffff', maxW);
         }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -975,22 +1046,18 @@ const VideoSlidePage = () => {
   const POST_HOLD_MS = 600; // pequena pausa após texto completo
   // Duração do typewriter baseada no número de caracteres (suave, consistente)
   const CHAR_TIME_MS = 35; // ~28 chars/seg
-  const computedTypewriterMs = Math.max(800, Math.round(totalCharsAll * CHAR_TIME_MS));
-  const TYPEWRITER_DURATION_MS = computedTypewriterMs;
 
   // Slide deve durar pelo menos: barra + texto + hold final
-  const minRequiredMs = BAR_DURATION_MS + TYPEWRITER_DURATION_MS + POST_HOLD_MS;
+  const minRequiredMs = BAR_DURATION_MS + (captionText ? captionText.length * CHAR_TIME_MS + 800 : 0) + POST_HOLD_MS;
   const durationMsEffective = Math.max(durationSecInput * 1000, minRequiredMs);
   const totalFrames = Math.max(1, Math.round(durationMsEffective / FRAME_MS));
   console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${(durationMsEffective/1000).toFixed(2)}s a ${FRAME_RATE}fps)`);
 
   const slideStart = Date.now();
-  // Typewriter: controle por frame para evitar saltos de caracteres
-  let typedCharCount = 0; // total de caracteres já revelados
-  let typedAcc = 0; // acumulador fracionário por frame
-  const charsPerFrameIdeal = FRAME_MS / CHAR_TIME_MS; // ~0.95 char/frame a 30fps
-  // Otimização de vídeo: evitar seek por frame
+  // Controle de vídeo: voltar a setar currentTime por frame
   let lastVidTimeSet = -1;
+  // Estado do typewriter
+  let typewriterStarted = false;
         for (let frame = 0; frame < totalFrames; frame++) {
           // Timing: baseado em tempo real e alvo de 30fps
           const targetMs = frame * FRAME_MS;
@@ -1064,13 +1131,10 @@ const VideoSlidePage = () => {
             dy = clamp(dy + shiftY, canvas.height - drawH, 0);
           }
           
-          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo (evitar seek a cada frame)
+          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo (seek por frame garante atualização)
           if (isVideo && videoEl) {
             const tSec = Math.min((isFinite(videoEl.duration) && videoEl.duration > 0) ? videoEl.duration : durationSecInput, elapsedMs / 1000);
-            const diff = Math.abs((videoEl.currentTime || 0) - tSec);
-            if (lastVidTimeSet < 0 || diff > 0.05) {
-              try { videoEl.currentTime = tSec; lastVidTimeSet = tSec; } catch {}
-            }
+            try { videoEl.currentTime = tSec; lastVidTimeSet = tSec; } catch {}
             try { ctx.drawImage(videoEl, dx, dy, drawW, drawH); } catch {}
           } else {
             ctx.drawImage(img, dx, dy, drawW, drawH);
@@ -1109,87 +1173,47 @@ const VideoSlidePage = () => {
             ctx.globalAlpha = 1.0;
           }
           
-          // CORRIGIDO: Linha amarela antes do texto + texto com typewriter (cores da referência)
-          if (textLines.length > 0) {
+          // CORRIGIDO: Linha amarela antes do texto + texto com typewriter usando TypewriterRenderer
+          if (captionText) {
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            // Configurações baseadas em fonte (+20%)
+            
             const SAFE_MARGIN = 50;
             const fontSize = Math.round(48 * 1.2);
-            ctx.font = `800 ${fontSize}px Poppins, Arial, sans-serif`;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-
-            // Alinhamentos: barra mais à esquerda que o texto
             const textLeft = SAFE_MARGIN;
-            const barLeft = SAFE_MARGIN; // respeita margem de segurança
-            const maxRectWidthGlobal = (canvas.width - SAFE_MARGIN) - textLeft;
+            const barLeft = SAFE_MARGIN;
 
-            const padX = 20;
-            const padY = Math.round(fontSize * 0.25); // altura do bloco acompanha o tamanho da fonte
-            const rectHeight = fontSize + padY * 2;
-            const lineGap = Math.max(8, Math.round(fontSize * 0.1)); // separação mínima entre blocos
-            const lineHeight = rectHeight + lineGap;
-
-            const totalH = textLines.length * lineHeight;
-            // Subir conjunto (barra + texto) aproximadamente 270px
-            let y = canvas.height - (200 + 270) - totalH; // topo do bloco de texto mais alto
-
-            // Corrigir Y mínimo para não colar demais no topo em casos com muitas linhas
-            const minTopSafe = 120;
-            if (y < minTopSafe) y = minTopSafe;
+            // Posição do texto (subir conjunto ~270px)
+            let y = canvas.height - (200 + 270) - 100;
+            if (y < 120) y = 120;
 
             // 1) Linha amarela animada (antes do texto)
             const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-            const preLineDurationMs = BAR_DURATION_MS; // barra com easing e mais longa
+            const preLineDurationMs = BAR_DURATION_MS;
             const preLineProgress = easeOutCubic(Math.min(1, elapsedMs / preLineDurationMs));
-            const yellowWidthTarget = Math.min(100, maxRectWidthGlobal); // largura fixa (limitada pela margem)
+            const yellowWidthTarget = Math.min(100, canvas.width - SAFE_MARGIN - textLeft);
             const yellowWidth = Math.max(0, Math.floor(yellowWidthTarget * preLineProgress));
-            const yellowHeight = 15; // altura fixa 15px
-            // Subir a barra amarela ~20px acima do que estava
-            const yellowY = y - Math.round(fontSize * 0.5) - 20; // acima do texto proporcional + 20px
+            const yellowHeight = 15;
+            const yellowY = y - Math.round(fontSize * 0.5) - 20;
             if (yellowWidth > 0) {
               ctx.fillStyle = '#eebe32';
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-              // 2) Texto (typewriter) inicia após a linha completar
-              const typewriterStartDelayMs = preLineDurationMs; // texto só aparece após a barra
-              if (elapsedMs >= typewriterStartDelayMs && typedCharCount < totalCharsAll) {
-                // Avança no máximo 1 caractere por frame para não "pular"
-                typedAcc += charsPerFrameIdeal;
-                if (typedAcc >= 1) {
-                  const add = 1; // limite de 1 por frame
-                  typedCharCount = Math.min(totalCharsAll, typedCharCount + add);
-                  typedAcc -= add;
-                }
+            // 2) Texto (typewriter) usando TypewriterRenderer
+            const typewriterStartDelayMs = preLineDurationMs;
+            if (elapsedMs >= typewriterStartDelayMs) {
+              if (!typewriterStarted) {
+                typewriterStarted = true;
               }
-              const totalCharsToShow = typedCharCount;
-              let remaining = totalCharsToShow;
-
-            for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
-              const line = textLines[lineIndex];
-              if (remaining <= 0) break; // nada mais a mostrar
-              const showForLine = Math.min(line.length, remaining);
-              const renderText = line.slice(0, showForLine);
-              remaining -= showForLine;
-
-              if (renderText.length > 0) {
-                // Aproximação proporcional: largura total da linha * fração exibida
-                const fullW = lineWidths[lineIndex] ?? ctx.measureText(line).width;
-                const frac = renderText.length / Math.max(1, line.length);
-                const textWidth = fullW * frac;
-                const rectWidth = Math.min(textWidth + padX * 2, maxRectWidthGlobal);
-                if (rectWidth > 0) {
-                  ctx.fillStyle = '#cb403a';
-                  ctx.fillRect(textLeft, y - padY, rectWidth, rectHeight);
-                  ctx.fillStyle = '#ffffff';
-                  ctx.fillText(renderText, textLeft + padX, y - padY + rectHeight / 2);
-                }
-              }
-              y += lineHeight;
+              // Avançar 1 caractere por frame
+              typewriterRenderer.advance();
+              
+              // Renderizar texto com fundo vermelho usando o sistema de cache
+              typewriterRenderer.render(ctx, textLeft, y);
             }
-      ctx.restore();
+
+            ctx.restore();
           }
 
           // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo) e mais visível
