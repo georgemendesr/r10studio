@@ -70,22 +70,27 @@ async function groqSegment(text, maxSeconds = 90) {
   "segments": [{"text": "..."}],
   "suggestedImages": 3
 }`;
-  const resp = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    messages: [
-      { role: 'system', content: 'Responda somente com JSON válido.' },
-      { role: 'user', content: prompt + "\n\nTEXTO:\n\n" + text }
-    ],
-    temperature: 0.3,
-  });
-  const content = resp.choices?.[0]?.message?.content || '';
   try {
-    const parsed = JSON.parse(content);
-    const split = (parsed.segments || []).flatMap(s => splitByCharLimit(s.text));
-    parsed.segments = enforceTimeBudget(split.map(t => ({ text: t })), maxSeconds);
-    parsed.suggestedImages = Math.max(1, Math.round((parsed.segments?.length || 0) / 2));
-    return parsed;
-  } catch {
+    const resp = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: 'Responda somente com JSON válido.' },
+        { role: 'user', content: prompt + "\n\nTEXTO:\n\n" + text }
+      ],
+      temperature: 0.3,
+    });
+    const content = resp.choices?.[0]?.message?.content || '';
+    try {
+      const parsed = JSON.parse(content);
+      const split = (parsed.segments || []).flatMap(s => splitByCharLimit(s.text));
+      parsed.segments = enforceTimeBudget(split.map(t => ({ text: t })), maxSeconds);
+      parsed.suggestedImages = Math.max(1, Math.round((parsed.segments?.length || 0) / 2));
+      return parsed;
+    } catch {
+      return heuristicSegment(text, maxSeconds);
+    }
+  } catch (err) {
+    // Falha na chamada à Groq (chave inválida, rate limit, rede): usar heurística
     return heuristicSegment(text, maxSeconds);
   }
 }
@@ -94,13 +99,17 @@ async function extractFromUrlOrText({ url, text, maxSeconds = 90 }) {
   let articleText = text || '';
   let title = '';
   if (url) {
-    const r = await fetch(url, { redirect: 'follow' });
-    const html = await r.text();
-    const dom = new JSDOM(html, { url });
-    const reader = new Readability(dom.window.document);
-    const article = reader.parse();
-    title = article?.title || dom.window.document.title || '';
-    articleText = article?.textContent || dom.window.document.body.textContent || '';
+    try {
+      const r = await fetch(url, { redirect: 'follow' });
+      const html = await r.text();
+      const dom = new JSDOM(html, { url });
+      const reader = new Readability(dom.window.document);
+      const article = reader.parse();
+      title = article?.title || dom.window.document.title || '';
+      articleText = article?.textContent || dom.window.document.body.textContent || '';
+    } catch {
+      // Se falhar o fetch/parse, seguimos com o texto já fornecido (se houver)
+    }
   }
   if (!articleText.trim()) throw new Error('Texto vazio');
   const segmented = await groqSegment(articleText, maxSeconds);

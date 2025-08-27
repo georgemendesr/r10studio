@@ -99,7 +99,7 @@ function heuristicSegment(text: string, maxSeconds = 90): ExtractionResult {
 
 async function groqSegment(text: string, maxSeconds = 90): Promise<ExtractionResult> {
 	if (!groq) return heuristicSegment(text, maxSeconds);
-		const prompt = `Você é editor de telejornal. Produza tópicos curtos, estilo bullet (frases curtas e diretas, 10–18 palavras), prontos para GC. Cada tópico deve ter no máximo ${MAX_CHARS_PER_SEGMENT} caracteres (não ultrapassar). Mantenha ordem lógica e contexto. Limite a duração total estimada do vídeo a no máximo ${maxSeconds}s considerando animação de digitação (barra+typewriter). Devolva JSON:
+	const prompt = `Você é editor de telejornal. Produza tópicos curtos, estilo bullet (frases curtas e diretas, 10–18 palavras), prontos para GC. Cada tópico deve ter no máximo ${MAX_CHARS_PER_SEGMENT} caracteres (não ultrapassar). Mantenha ordem lógica e contexto. Limite a duração total estimada do vídeo a no máximo ${maxSeconds}s considerando animação de digitação (barra+typewriter). Devolva JSON:
 {
 	"title": "manchete curta se houver",
 	"summary": "resumo enxuto (1 frase)",
@@ -110,25 +110,29 @@ Texto:
 """
 ${text}
 """`;
-	const resp = await groq.chat.completions.create({
-		model: 'llama-3.3-70b-versatile',
-		messages: [
-			{ role: 'system', content: 'Responda somente com JSON válido.' },
-			{ role: 'user', content: prompt },
-		],
-		temperature: 0.3,
-	});
-	const content = resp.choices?.[0]?.message?.content || '';
-	try {
-		const parsed = JSON.parse(content);
-		// Impor limite de caracteres e orçamento localmente mesmo após LLM
-		const split = (parsed.segments || []).flatMap((s: Segment) => splitByCharLimit(s.text));
-		parsed.segments = enforceTimeBudget(split.map(t => ({ text: t })), maxSeconds);
-		parsed.suggestedImages = Math.max(1, Math.round((parsed.segments?.length || 0) / 2));
-		return parsed;
-	} catch {
-		return heuristicSegment(text, maxSeconds);
-	}
+		try {
+			const resp = await groq.chat.completions.create({
+				model: 'llama-3.3-70b-versatile',
+				messages: [
+					{ role: 'system', content: 'Responda somente com JSON válido.' },
+					{ role: 'user', content: prompt },
+				],
+				temperature: 0.3,
+			});
+			const content = resp.choices?.[0]?.message?.content || '';
+			try {
+				const parsed = JSON.parse(content);
+				// Impor limite de caracteres e orçamento localmente mesmo após LLM
+				const split = (parsed.segments || []).flatMap((s: Segment) => splitByCharLimit(s.text));
+				parsed.segments = enforceTimeBudget(split.map(t => ({ text: t })), maxSeconds);
+				parsed.suggestedImages = Math.max(1, Math.round((parsed.segments?.length || 0) / 2));
+				return parsed;
+			} catch {
+				return heuristicSegment(text, maxSeconds);
+			}
+		} catch {
+			return heuristicSegment(text, maxSeconds);
+		}
 }
 
 app.post('/api/extract', async (req, res) => {
@@ -139,15 +143,19 @@ app.post('/api/extract', async (req, res) => {
 		let articleText = text || '';
 		let title = '';
 
-		if (url) {
-			const r = await fetch(url, { redirect: 'follow' });
-			const html = await r.text();
-			const dom = new JSDOM(html, { url });
-			const reader = new Readability(dom.window.document);
-			const article = reader.parse();
-			title = article?.title || dom.window.document.title || '';
-			articleText = article?.textContent || dom.window.document.body.textContent || '';
-		}
+			if (url) {
+				try {
+					const r = await fetch(url, { redirect: 'follow' });
+					const html = await r.text();
+					const dom = new JSDOM(html, { url });
+					const reader = new Readability(dom.window.document);
+					const article = reader.parse();
+					title = article?.title || dom.window.document.title || '';
+					articleText = article?.textContent || dom.window.document.body.textContent || '';
+				} catch (err) {
+					console.warn('Falha ao buscar/parsear URL, seguindo com texto bruto se houver');
+				}
+			}
 		if (!articleText.trim()) return res.status(422).json({ error: 'Não foi possível extrair texto' });
 
 		const segmented = await groqSegment(articleText, maxSeconds || 90);
