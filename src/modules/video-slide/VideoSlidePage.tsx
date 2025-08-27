@@ -916,9 +916,8 @@ const VideoSlidePage = () => {
   // Pré-calcular quebra de linhas (performance) - FONTE MAIOR
   let textLines: string[] = [];
   let totalCharsAll = 0;
-  // Pré-cálculo: larguras cumulativas por caractere para cada linha
-  // Ex.: textWidths[lineIndex][k] = largura de textLines[lineIndex].slice(0, k)
-  let textWidths: number[][] = [];
+  // Pré-cálculo leve: largura total de cada linha
+  let lineWidths: number[] = [];
         if (captionText) {
           const SAFE_MARGIN = 50; // margem de segurança em cada lado
           const baseFont = 48;
@@ -967,19 +966,8 @@ const VideoSlidePage = () => {
           }
           if (current.length > 0) textLines.push(current);
           totalCharsAll = textLines.reduce((acc, line) => acc + line.length, 0);
-          // Construir vetores de larguras cumulativas por caractere
-          textWidths = textLines.map(line => {
-            const widths: number[] = [0]; // base 0 para k=0
-            let last = 0;
-            // medição incremental por caractere
-            for (let k = 1; k <= line.length; k++) {
-              const w = ctx.measureText(line.slice(0, k)).width;
-              // evitar regressão (caso exotic), garantir não-decrescente
-              last = Math.max(last, w);
-              widths.push(last);
-            }
-            return widths;
-          });
+          // Medir 1x por linha
+          lineWidths = textLines.map(line => ctx.measureText(line).width);
         }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -1001,6 +989,8 @@ const VideoSlidePage = () => {
   let typedCharCount = 0; // total de caracteres já revelados
   let typedAcc = 0; // acumulador fracionário por frame
   const charsPerFrameIdeal = FRAME_MS / CHAR_TIME_MS; // ~0.95 char/frame a 30fps
+  // Otimização de vídeo: evitar seek por frame
+  let lastVidTimeSet = -1;
         for (let frame = 0; frame < totalFrames; frame++) {
           // Timing: baseado em tempo real e alvo de 30fps
           const targetMs = frame * FRAME_MS;
@@ -1074,10 +1064,13 @@ const VideoSlidePage = () => {
             dy = clamp(dy + shiftY, canvas.height - drawH, 0);
           }
           
-          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo
+          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo (evitar seek a cada frame)
           if (isVideo && videoEl) {
-            const tSec = Math.min(videoEl.duration || durationSecInput, elapsedMs / 1000);
-            try { videoEl.currentTime = tSec; } catch {}
+            const tSec = Math.min((isFinite(videoEl.duration) && videoEl.duration > 0) ? videoEl.duration : durationSecInput, elapsedMs / 1000);
+            const diff = Math.abs((videoEl.currentTime || 0) - tSec);
+            if (lastVidTimeSet < 0 || diff > 0.05) {
+              try { videoEl.currentTime = tSec; lastVidTimeSet = tSec; } catch {}
+            }
             try { ctx.drawImage(videoEl, dx, dy, drawW, drawH); } catch {}
           } else {
             ctx.drawImage(img, dx, dy, drawW, drawH);
@@ -1182,9 +1175,10 @@ const VideoSlidePage = () => {
               remaining -= showForLine;
 
               if (renderText.length > 0) {
-                // Usar largura pré-calculada ao invés de medir a cada frame
-                const wTable = textWidths[lineIndex] || [0];
-                const textWidth = wTable[Math.min(renderText.length, wTable.length - 1)] || 0;
+                // Aproximação proporcional: largura total da linha * fração exibida
+                const fullW = lineWidths[lineIndex] ?? ctx.measureText(line).width;
+                const frac = renderText.length / Math.max(1, line.length);
+                const textWidth = fullW * frac;
                 const rectWidth = Math.min(textWidth + padX * 2, maxRectWidthGlobal);
                 if (rectWidth > 0) {
                   ctx.fillStyle = '#cb403a';
