@@ -10,114 +10,175 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
-// CORREÇÃO - Detecta slide novo de forma confiável
+// CORREÇÃO - Limpa recursos para evitar acúmulo após 2º slide
 
 // Variáveis globais
 let currentSlideText = '';
 let currentCharCount = 0;
 let textLines: string[] = [];
-let lastSlideIndex = -1; // CRÍTICO: rastreia qual slide está ativo
-let textWasSetup = false; // Evita setup duplo
+let lastSlideIndex = -1;
+let textWasSetup = false;
 
-// Setup do texto (uma vez por slide)
-function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number, slideIndex: number) {
-  console.log('=== SETUP SLIDE', slideIndex, '===', text.substring(0, 30));
+// LIMPEZA FORÇADA antes de cada slide novo
+function cleanupSlideResources() {
+  currentSlideText = '';
+  currentCharCount = 0;
+  textLines = []; // Limpa array
+  textWasSetup = false;
   
-  currentSlideText = text;
+  // FORÇA garbage collection se possível
+  if ((window as any).gc) {
+    (window as any).gc();
+  }
+}
+
+// Setup mais robusto
+function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number, slideIndex: number) {
+  console.log('=== SETUP SLIDE', slideIndex, '- Limpando recursos anteriores ===');
+  
+  // LIMPA TUDO primeiro
+  cleanupSlideResources();
+  
+  currentSlideText = text || '';
   currentCharCount = 0;
   lastSlideIndex = slideIndex;
   textWasSetup = true;
   
-  // Pre-calcula linhas uma vez só
-  textLines = [];
-  const words = text.split(' ');
+  // FALLBACK se texto estiver vazio
+  if (!currentSlideText) {
+    console.warn('Texto vazio no slide', slideIndex);
+    return;
+  }
+  
+  // Configuração de contexto LIMPA
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  
+  // Pre-calcula linhas
+  const words = currentSlideText.split(' ');
   let currentLine = '';
   
-  for (const word of words) {
-    const testLine = currentLine + (currentLine ? ' ' : '') + word;
-    if (ctx.measureText(testLine).width <= maxWidth) {
-      currentLine = testLine;
-    } else {
-      if (currentLine) textLines.push(currentLine);
-      currentLine = word;
+  try {
+    for (const word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) textLines.push(currentLine);
+        currentLine = word;
+      }
     }
+    if (currentLine) textLines.push(currentLine);
+    
+    console.log('Slide', slideIndex, '- Chars:', currentSlideText.length, 'Linhas:', textLines.length);
+    
+  } catch (error) {
+    console.error('Erro no measureText:', error);
+    // Fallback: uma linha só
+    textLines = [currentSlideText.substring(0, 50)];
   }
-  if (currentLine) textLines.push(currentLine);
-  
-  console.log('Linhas criadas:', textLines.length, 'Total chars:', text.length);
 }
 
-// Render do typewriter
+// Render mais defensivo
 function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40) {
-  if (!textWasSetup) return;
+  if (!textWasSetup || !currentSlideText || textLines.length === 0) {
+    return;
+  }
   
-  // Avança 1 char por frame
+  // Proteção contra loops infinitos
   if (currentCharCount < currentSlideText.length) {
     currentCharCount++;
   }
   
-  // Desenha texto até currentCharCount COM FUNDO VERMELHO
+  // Debug a cada 60 frames (2 segundos)
+  if (currentCharCount % 60 === 0) {
+    console.log('Slide', lastSlideIndex, '- Progresso:', currentCharCount, '/', currentSlideText.length);
+  }
+  
   let charsSoFar = 0;
   let yOffset = 0;
   
-  for (const line of textLines) {
-    if (charsSoFar >= currentCharCount) break;
-    
-    const charsInThisLine = line.length + 1; // +1 para o espaço
-    
-    let textToShow = '';
-    if (charsSoFar + charsInThisLine <= currentCharCount) {
-      // Linha completa
-      textToShow = line;
-    } else {
-      // Linha parcial
-      const charsToShow = currentCharCount - charsSoFar;
-      textToShow = line.substring(0, charsToShow);
-    }
-    
-    if (textToShow) {
-      const textWidth = ctx.measureText(textToShow).width;
-      const padding = 20;
-      const rectHeight = lineHeight;
+  try {
+    for (let i = 0; i < textLines.length; i++) {
+      const line = textLines[i];
+      if (!line || charsSoFar >= currentCharCount) break;
       
-      // Fundo vermelho
-      ctx.fillStyle = '#cb403a';
-      ctx.fillRect(x, y + yOffset, textWidth + padding * 2, rectHeight);
+      const charsInThisLine = line.length + 1;
       
-      // Texto branco
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(textToShow, x + padding, y + yOffset + 5);
+      let textToShow = '';
+      if (charsSoFar + charsInThisLine <= currentCharCount) {
+        // Linha completa
+        textToShow = line;
+      } else {
+        // Linha parcial
+        const charsToShow = Math.max(0, currentCharCount - charsSoFar);
+        textToShow = line.substring(0, charsToShow);
+      }
+      
+      if (textToShow) {
+        const textWidth = ctx.measureText(textToShow).width;
+        const padding = 20;
+        const rectHeight = lineHeight;
+        
+        // Fundo vermelho
+        ctx.fillStyle = '#cb403a';
+        ctx.fillRect(x, y + yOffset, textWidth + padding * 2, rectHeight);
+        
+        // Texto branco
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(textToShow, x + padding, y + yOffset + 5);
+      }
+      
+      if (charsSoFar + charsInThisLine > currentCharCount) break;
+      
+      charsSoFar += charsInThisLine;
+      yOffset += lineHeight;
     }
-    
-    if (charsSoFar + charsInThisLine > currentCharCount) break;
-    
-    charsSoFar += charsInThisLine;
-    yOffset += lineHeight;
+  } catch (error) {
+    console.error('Erro no render:', error);
   }
 }
 
-// Função principal para renderizar texto do slide
+// Função principal para renderizar texto do slide com mais verificações
 function renderSlideText(ctx: CanvasRenderingContext2D, slideIndex: number, captionText: string, elapsedMs: number, typewriterStartDelayMs: number, textLeft: number, y: number) {
-  // Se não tem texto, pula
-  if (!captionText) return;
+  // Verificações básicas
+  if (!captionText || typeof slideIndex !== 'number') {
+    return;
+  }
   
-  // DETECTA SLIDE NOVO - compara índice do slide
+  // DETECTA SLIDE NOVO com log
   if (slideIndex !== lastSlideIndex) {
-    console.log('NOVO SLIDE DETECTADO:', slideIndex, 'anterior:', lastSlideIndex);
-    textWasSetup = false; // Marca que precisa setup
+    console.log('MUDANÇA DE SLIDE:', lastSlideIndex, '->', slideIndex);
+    console.log('Texto do novo slide:', captionText.substring(0, 50) + '...');
+    textWasSetup = false;
   }
   
-  // Se chegou na hora do texto E ainda não fez setup
+  // Setup quando necessário
   if (elapsedMs >= typewriterStartDelayMs && !textWasSetup) {
+    console.log('Iniciando setup do slide', slideIndex, 'no frame em elapsedMs:', elapsedMs);
+    
+    // Salva e restaura configurações do contexto
+    ctx.save();
     ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
-    setupSlideText(captionText, ctx, 1080 - 100 - 40, slideIndex); // canvas.width - margins
+    setupSlideText(captionText, ctx, 1080 - 100 - 40, slideIndex);
+    ctx.restore();
   }
   
-  // Renderiza se já fez setup
+  // Render se está pronto
   if (textWasSetup && elapsedMs >= typewriterStartDelayMs) {
+    ctx.save();
     ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
     renderTypewriter(ctx, textLeft, y);
+    ctx.restore();
   }
+}
+
+// ADICIONE também esta limpeza no final de cada slide:
+function finishSlide() {
+  console.log('Finalizando slide', lastSlideIndex);
+  cleanupSlideResources();
 }
 
 interface Slide {
