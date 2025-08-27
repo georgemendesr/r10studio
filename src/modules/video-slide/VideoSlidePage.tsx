@@ -10,208 +10,83 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
-// Sistema de renderização de texto otimizado com correção para travamento entre slides
-class TextRenderer {
-  private textCache = new Map<string, HTMLCanvasElement>();
-  private maxCacheSize = 20; // Limita cache para evitar acúmulo
+// SOLUÇÃO SIMPLES - só remove o measureText do loop
 
-  renderLineToCanvas(text: string, font: string, color: string, maxWidth: number, padding = 20): HTMLCanvasElement {
-    const cacheKey = `${text}|${font}|${color}|${maxWidth}|${padding}`;
-    
-    if (this.textCache.has(cacheKey)) {
-      return this.textCache.get(cacheKey)!;
-    }
+// Variáveis globais simples
+let currentSlideText = '';
+let currentCharCount = 0;
+let textLines: string[] = []; // Pre-calculado uma vez só
 
-    // Limpa cache se ficou grande demais
-    if (this.textCache.size >= this.maxCacheSize) {
-      this.textCache.clear(); // Limpa tudo para evitar vazamento
+// Quando INICIA um novo slide com texto (chame uma vez só):
+function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number) {
+  currentSlideText = text;
+  currentCharCount = 0;
+  
+  // PRE-CALCULA as linhas UMA VEZ SÓ (sem fazer no loop)
+  textLines = [];
+  const words = text.split(' ');
+  let currentLine = '';
+  
+  for (const word of words) {
+    const testLine = currentLine + (currentLine ? ' ' : '') + word;
+    if (ctx.measureText(testLine).width <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) textLines.push(currentLine);
+      currentLine = word;
     }
+  }
+  if (currentLine) textLines.push(currentLine);
+  
+  console.log('Setup text:', text.substring(0, 50), 'Lines:', textLines.length);
+}
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Falha ao criar contexto 2D');
+// No loop de render (chame a cada frame):
+function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40) {
+  // Avança 1 caractere por frame
+  if (currentCharCount < currentSlideText.length) {
+    currentCharCount++;
+  }
+  
+  // Desenha o texto visível até agora COM FUNDO VERMELHO
+  let charsSoFar = 0;
+  let yOffset = 0;
+  
+  for (const line of textLines) {
+    if (charsSoFar >= currentCharCount) break;
     
-    ctx.font = font;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    const charsInThisLine = line.length + 1; // +1 para o espaço
     
-    // Quebra texto em linhas respeitando maxWidth
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let currentLine = '';
-    
-    for (const word of words) {
-      const testLine = currentLine + (currentLine ? ' ' : '') + word;
-      if (ctx.measureText(testLine).width <= maxWidth - padding * 2) {
-        currentLine = testLine;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = word;
-      }
+    let textToShow = '';
+    if (charsSoFar + charsInThisLine <= currentCharCount) {
+      // Linha completa
+      textToShow = line;
+    } else {
+      // Linha parcial
+      const charsToShow = currentCharCount - charsSoFar;
+      textToShow = line.substring(0, charsToShow);
     }
-    if (currentLine) lines.push(currentLine);
     
-    // Configura canvas baseado no número de linhas
-    const lineHeight = 40;
-    canvas.width = maxWidth;
-    canvas.height = Math.max(lines.length * lineHeight, lineHeight);
-    
-    // Redesenha após redimensionar
-    ctx.font = font;
-    ctx.fillStyle = color;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    
-    // Desenha cada linha com fundo vermelho e texto branco
-    lines.forEach((line, index) => {
-      const y = index * lineHeight;
-      const textWidth = ctx.measureText(line).width;
-      const rectWidth = Math.min(textWidth + padding * 2, maxWidth);
+    if (textToShow) {
+      const textWidth = ctx.measureText(textToShow).width;
+      const padding = 20;
+      const rectHeight = lineHeight;
       
       // Fundo vermelho
       ctx.fillStyle = '#cb403a';
-      ctx.fillRect(0, y, rectWidth, lineHeight);
+      ctx.fillRect(x, y + yOffset, textWidth + padding * 2, rectHeight);
       
       // Texto branco
-      ctx.fillStyle = color;
-      ctx.fillText(line, padding, y);
-    });
-    
-    this.textCache.set(cacheKey, canvas);
-    return canvas;
-  }
-
-  // IMPORTANTE: Limpa cache entre slides
-  clearCache() {
-    this.textCache.clear();
-  }
-}
-
-// Sistema de typewriter com controle por frame e reset completo entre slides
-class TypewriterRenderer {
-  public textRenderer = new TextRenderer(); // Tornar público para acesso pelo gerenciador
-  private currentCharCount = 0;
-  private targetText = '';
-  private font = '';
-  private color = '';
-  private maxWidth = 0;
-  private isSetup = false;
-  private frameCounter = 0; // Contador interno de frames
-
-  // CRÍTICO: Reset completo entre slides
-  reset() {
-    this.currentCharCount = 0;
-    this.targetText = '';
-    this.font = '';
-    this.color = '';
-    this.maxWidth = 0;
-    this.isSetup = false;
-    this.frameCounter = 0;
-  }
-
-  setup(text: string, font: string, color: string, maxWidth: number) {
-    // FORÇA reset antes de setup
-    this.reset();
-    
-    this.targetText = text || '';
-    this.font = font;
-    this.color = color;
-    this.maxWidth = maxWidth;
-    this.isSetup = true;
-    this.frameCounter = 0;
-    
-    console.log('TypeWriter Setup:', { 
-      textLength: this.targetText.length, 
-      slideText: this.targetText.substring(0, 50) + '...' 
-    });
-  }
-
-  advance() {
-    if (!this.isSetup) return;
-    
-    this.frameCounter++; // Sempre incrementa
-    
-    // FORÇA 1 letra por frame, independente de timing
-    if (this.currentCharCount < this.targetText.length) {
-      this.currentCharCount++;
-      
-      // Debug a cada 30 frames
-      if (this.frameCounter % 30 === 0) {
-        console.log('TypeWriter Progress:', {
-          frame: this.frameCounter,
-          chars: this.currentCharCount,
-          total: this.targetText.length,
-          currentText: this.targetText.substring(0, this.currentCharCount)
-        });
-      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(textToShow, x + padding, y + yOffset + 5);
     }
-  }
-
-  render(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    if (!this.isSetup || this.currentCharCount === 0) return;
-
-    try {
-      const visibleText = this.targetText.substring(0, this.currentCharCount);
-      
-      if (visibleText.length === 0) return;
-      
-      const textCanvas = this.textRenderer.renderLineToCanvas(
-        visibleText, 
-        this.font, 
-        this.color, 
-        this.maxWidth,
-        20 // padding
-      );
-
-      ctx.drawImage(textCanvas, x, y);
-    } catch (error) {
-      console.error('Render error:', error);
-    }
-  }
-
-  isComplete() {
-    return this.isSetup && this.currentCharCount >= this.targetText.length;
-  }
-
-  // Método público para limpar cache
-  clearTextCache() {
-    this.textRenderer.clearCache();
+    
+    if (charsSoFar + charsInThisLine > currentCharCount) break;
+    
+    charsSoFar += charsInThisLine;
+    yOffset += lineHeight;
   }
 }
-
-// GERENCIADOR GLOBAL - Use UMA instância para todos os slides
-class SlideTextManager {
-  private typewriter = new TypewriterRenderer();
-  public currentSlideIndex = -1;
-
-  // CHAME ISTO SEMPRE que mudar de slide
-  startNewSlide(slideIndex: number, text: string, font: string, color: string, maxWidth: number) {
-    console.log('=== NOVO SLIDE ===', slideIndex);
-    
-    // Força limpeza completa
-    this.typewriter.clearTextCache();
-    this.typewriter.reset();
-    
-    // Setup novo slide
-    this.currentSlideIndex = slideIndex;
-    this.typewriter.setup(text, font, color, maxWidth);
-  }
-
-  advance() {
-    this.typewriter.advance();
-  }
-
-  render(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    this.typewriter.render(ctx, x, y);
-  }
-
-  isComplete() {
-    return this.typewriter.isComplete();
-  }
-}
-
-// USO CORRETO - Crie UMA instância global:
-const slideTextManager = new SlideTextManager();
 
 interface Slide {
   id: string;
@@ -1118,7 +993,8 @@ const VideoSlidePage = () => {
         
   // totalFrames é definido após o cálculo de durationMsEffective
         
-  // CORREÇÃO: Usar SlideTextManager global ao invés de TypewriterRenderer individual
+  // CORREÇÃO: Usar função simples ao invés de classe complexa
+  let textSetupDone = false;
   if (captionText) {
     // Preparar fonte e configurações para o typewriter
     const SAFE_MARGIN = 50;
@@ -1126,9 +1002,8 @@ const VideoSlidePage = () => {
     const fontSizePX = Math.round(baseFont * 1.2);
     const font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
     const maxW = canvas.width - (SAFE_MARGIN * 2) - 40; // padding
-
-    // Configurar novo slide no gerenciador global
-    slideTextManager.startNewSlide(i, captionText, font, '#ffffff', maxW);
+    
+    // Configuração será feita no primeiro frame onde o texto aparece
   }
 
   // Protocolo de garantia: tempos mínimos para animações
@@ -1290,17 +1165,19 @@ const VideoSlidePage = () => {
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-            // 2) Texto (typewriter) usando SlideTextManager global
+            // 2) Texto (typewriter) usando função simples
             const typewriterStartDelayMs = preLineDurationMs;
             if (elapsedMs >= typewriterStartDelayMs) {
               if (!typewriterStarted) {
                 typewriterStarted = true;
+                // Setup do texto UMA VEZ SÓ quando começa
+                ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
+                setupSlideText(captionText, ctx, canvas.width - 100 - 40);
               }
-              // Avançar 1 caractere por frame com detecção automática de mudança de slide
-              slideTextManager.advance();
               
-              // Renderizar texto com fundo vermelho usando o sistema de cache
-              slideTextManager.render(ctx, textLeft, y);
+              // Renderizar texto com função simples
+              ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
+              renderTypewriter(ctx, textLeft, y);
             }
 
             ctx.restore();
