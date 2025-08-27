@@ -723,7 +723,7 @@ const VideoSlidePage = () => {
         }
       }
       
-      // Helper: especificação de efeitos PUNCH ZOOM - CORTES SECOS BRUSCOS + EFEITOS JORNALÍSTICOS
+  // Helper: especificação de efeitos PUNCH ZOOM - CORTES SECOS BRUSCOS + EFEITOS JORNALÍSTICOS
       const getEffectSpec = (effect: string) => {
         const map: Record<string, { durationMs: number; steps: Array<{ atMs: number; scale: number }> }> = {
           // STEP_IN_MULTI_IMPACT (antigo Denúncia Impacto): múltiplos punches em sequência
@@ -830,6 +830,19 @@ const VideoSlidePage = () => {
         preloadedImages[i] = img;
       }
 
+      // Parâmetros de drift sutil por slide (movimento suave e aleatório após o punch)
+      const driftParams = slides.map(() => ({
+        // frequências baixas (ciclos por segundo)
+        f1: 0.06 + Math.random() * 0.06, // ~0.06–0.12 Hz
+        f2: 0.04 + Math.random() * 0.05, // ~0.04–0.09 Hz
+        phase1: Math.random() * Math.PI * 2,
+        phase2: Math.random() * Math.PI * 2,
+        ampShift: 0.35 + Math.random() * 0.25, // 35%–60% do alcance máximo permitido
+        ampScale: 0.004 + Math.random() * 0.004 // 0.4%–0.8% de variação de escala
+      }));
+
+      const clamp = (v: number, min: number, max: number) => (v < min ? min : v > max ? max : v);
+
   for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
         const durationSecInput = slide.durationSec || 5;
@@ -840,6 +853,7 @@ const VideoSlidePage = () => {
         
   // Efeito com timing preciso
   const { durationMs, steps } = getEffectSpec(slide.effect || 'ALEATORIO');
+  const lastStepAtMs = steps.reduce((m, s) => Math.max(m, s.atMs), 0);
         
   // totalFrames é definido após o cálculo de durationMsEffective
         
@@ -928,25 +942,32 @@ const VideoSlidePage = () => {
             }
           }
           
-          // Desenhar imagem com zoom ANIMADO (garantir cobertura total, sem bordas pretas)
+          // Desenhar imagem com zoom e drift suave após o punch (cortes secos + movimento contínuo)
           const imgAspect = img.width / img.height;
           const canvasAspect = canvas.width / canvas.height;
           
-          // scale mínimo necessário para cobrir o canvas inteiro (cover)
-          const coverScale = imgAspect > canvasAspect
-            ? canvas.height / (canvas.height * 1) // base pela altura
-            : canvas.width / (canvas.width * 1);   // base pela largura
-          const safeScale = Math.max(scale, 1.0); // nunca menor que 1x
-          const finalScale = Math.max(safeScale, coverScale); // evita áreas pretas
+          // Garantir que não apareçam bordas pretas: nossa base 1.0 já cobre o canvas (pela lógica abaixo)
+          const baseSafeScale = Math.max(scale, 1.0);
+          // Ativar drift sutil após o último step do punch
+          let drawScale = baseSafeScale;
+          if (elapsedMs >= lastStepAtMs + 50) {
+            const dp = driftParams[i];
+            const t = (elapsedMs - lastStepAtMs) / 1000; // segundos após punch
+            // micro variação de escala (bem sutil)
+            const sOsc = dp.ampScale * Math.sin(2 * Math.PI * dp.f1 * t + dp.phase1)
+                        + (dp.ampScale * 0.5) * Math.sin(2 * Math.PI * dp.f2 * t + dp.phase2);
+            // zoom extra de 3% para permitir pan sem risco de borda
+            drawScale = baseSafeScale * 1.03 * (1 + sOsc);
+          }
 
           let drawW, drawH;
           if (imgAspect > canvasAspect) {
             // Imagem mais larga: ajustar pela altura
-            drawH = canvas.height * finalScale;
+            drawH = canvas.height * drawScale;
             drawW = drawH * imgAspect;
           } else {
             // Imagem mais alta: ajustar pela largura
-            drawW = canvas.width * finalScale;
+            drawW = canvas.width * drawScale;
             drawH = drawW / imgAspect;
           }
           
@@ -961,6 +982,21 @@ const VideoSlidePage = () => {
           if (slideAlignV === 'top') dy = 0; 
           else if (slideAlignV === 'bottom') dy = canvas.height - drawH; 
           else dy = (canvas.height - drawH) / 2;
+
+          // Aplicar pan suave e aleatório somente após o punch (mantendo cobertura sem bordas)
+          if (elapsedMs >= lastStepAtMs + 50) {
+            const dp = driftParams[i];
+            const t = (elapsedMs - lastStepAtMs) / 1000;
+            const excessX = Math.max(0, drawW - canvas.width);
+            const excessY = Math.max(0, drawH - canvas.height);
+            // offsets em [-0.5, 0.5] escalados pela amplitude
+            const ox = dp.ampShift * 0.5 * Math.sin(2 * Math.PI * dp.f2 * t + dp.phase2);
+            const oy = dp.ampShift * 0.4 * Math.sin(2 * Math.PI * (dp.f1 * 0.7) * t + dp.phase1 * 0.6);
+            const shiftX = (excessX / 2) * ox;
+            const shiftY = (excessY / 2) * oy;
+            dx = clamp(dx + shiftX, canvas.width - drawW, 0);
+            dy = clamp(dy + shiftY, canvas.height - drawH, 0);
+          }
           
           ctx.drawImage(img, dx, dy, drawW, drawH);
           
