@@ -10,9 +10,10 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
-// Sistema de renderização de texto otimizado
+// Sistema de renderização de texto otimizado com correção para travamento entre slides
 class TextRenderer {
   private textCache = new Map<string, HTMLCanvasElement>();
+  private maxCacheSize = 20; // Limita cache para evitar acúmulo
 
   renderLineToCanvas(text: string, font: string, color: string, maxWidth: number, padding = 20): HTMLCanvasElement {
     const cacheKey = `${text}|${font}|${color}|${maxWidth}|${padding}`;
@@ -21,13 +22,18 @@ class TextRenderer {
       return this.textCache.get(cacheKey)!;
     }
 
+    // Limpa cache se ficou grande demais
+    if (this.textCache.size >= this.maxCacheSize) {
+      this.textCache.clear(); // Limpa tudo para evitar vazamento
+    }
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Falha ao criar contexto 2D');
     
     ctx.font = font;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
     
     // Quebra texto em linhas respeitando maxWidth
     const words = text.split(' ');
@@ -46,81 +52,166 @@ class TextRenderer {
     if (currentLine) lines.push(currentLine);
     
     // Configura canvas baseado no número de linhas
-    const fontSize = parseInt(font.match(/(\d+)px/)?.[1] || '48');
-    const rectHeight = fontSize + Math.round(fontSize * 0.5);
-    const lineGap = Math.max(8, Math.round(fontSize * 0.1));
-    const totalHeight = lines.length * (rectHeight + lineGap);
-    
+    const lineHeight = 40;
     canvas.width = maxWidth;
-    canvas.height = totalHeight;
+    canvas.height = Math.max(lines.length * lineHeight, lineHeight);
     
     // Redesenha após redimensionar
     ctx.font = font;
+    ctx.fillStyle = color;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
     
     // Desenha cada linha com fundo vermelho e texto branco
     lines.forEach((line, index) => {
-      const y = index * (rectHeight + lineGap);
+      const y = index * lineHeight;
       const textWidth = ctx.measureText(line).width;
       const rectWidth = Math.min(textWidth + padding * 2, maxWidth);
       
       // Fundo vermelho
       ctx.fillStyle = '#cb403a';
-      ctx.fillRect(0, y, rectWidth, rectHeight);
+      ctx.fillRect(0, y, rectWidth, lineHeight);
       
       // Texto branco
       ctx.fillStyle = color;
-      ctx.fillText(line, padding, y + rectHeight / 2);
+      ctx.fillText(line, padding, y);
     });
     
     this.textCache.set(cacheKey, canvas);
     return canvas;
   }
+
+  // IMPORTANTE: Limpa cache entre slides
+  clearCache() {
+    this.textCache.clear();
+  }
 }
 
-// Sistema de typewriter com controle por frame
+// Sistema de typewriter com controle por frame e reset completo entre slides
 class TypewriterRenderer {
-  private textRenderer = new TextRenderer();
+  public textRenderer = new TextRenderer(); // Tornar público para acesso pelo gerenciador
   private currentCharCount = 0;
   private targetText = '';
   private font = '';
   private color = '';
   private maxWidth = 0;
+  private isSetup = false;
+  private frameCounter = 0; // Contador interno de frames
+
+  // CRÍTICO: Reset completo entre slides
+  reset() {
+    this.currentCharCount = 0;
+    this.targetText = '';
+    this.font = '';
+    this.color = '';
+    this.maxWidth = 0;
+    this.isSetup = false;
+    this.frameCounter = 0;
+  }
 
   setup(text: string, font: string, color: string, maxWidth: number) {
-    this.targetText = text;
+    // FORÇA reset antes de setup
+    this.reset();
+    
+    this.targetText = text || '';
     this.font = font;
     this.color = color;
     this.maxWidth = maxWidth;
-    this.currentCharCount = 0;
+    this.isSetup = true;
+    this.frameCounter = 0;
+    
+    console.log('TypeWriter Setup:', { 
+      textLength: this.targetText.length, 
+      slideText: this.targetText.substring(0, 50) + '...' 
+    });
   }
 
   advance() {
+    if (!this.isSetup) return;
+    
+    this.frameCounter++; // Sempre incrementa
+    
+    // FORÇA 1 letra por frame, independente de timing
     if (this.currentCharCount < this.targetText.length) {
       this.currentCharCount++;
+      
+      // Debug a cada 30 frames
+      if (this.frameCounter % 30 === 0) {
+        console.log('TypeWriter Progress:', {
+          frame: this.frameCounter,
+          chars: this.currentCharCount,
+          total: this.targetText.length,
+          currentText: this.targetText.substring(0, this.currentCharCount)
+        });
+      }
     }
   }
 
   render(ctx: CanvasRenderingContext2D, x: number, y: number) {
-    if (this.currentCharCount === 0) return;
+    if (!this.isSetup || this.currentCharCount === 0) return;
 
-    const visibleText = this.targetText.substring(0, this.currentCharCount);
-    const textCanvas = this.textRenderer.renderLineToCanvas(
-      visibleText, 
-      this.font, 
-      this.color, 
-      this.maxWidth,
-      20 // padding
-    );
+    try {
+      const visibleText = this.targetText.substring(0, this.currentCharCount);
+      
+      if (visibleText.length === 0) return;
+      
+      const textCanvas = this.textRenderer.renderLineToCanvas(
+        visibleText, 
+        this.font, 
+        this.color, 
+        this.maxWidth,
+        20 // padding
+      );
 
-    ctx.drawImage(textCanvas, x, y);
+      ctx.drawImage(textCanvas, x, y);
+    } catch (error) {
+      console.error('Render error:', error);
+    }
   }
 
   isComplete() {
-    return this.currentCharCount >= this.targetText.length;
+    return this.isSetup && this.currentCharCount >= this.targetText.length;
+  }
+
+  // Método público para limpar cache
+  clearTextCache() {
+    this.textRenderer.clearCache();
   }
 }
+
+// GERENCIADOR GLOBAL - Use UMA instância para todos os slides
+class SlideTextManager {
+  private typewriter = new TypewriterRenderer();
+  public currentSlideIndex = -1;
+
+  // CHAME ISTO SEMPRE que mudar de slide
+  startNewSlide(slideIndex: number, text: string, font: string, color: string, maxWidth: number) {
+    console.log('=== NOVO SLIDE ===', slideIndex);
+    
+    // Força limpeza completa
+    this.typewriter.clearTextCache();
+    this.typewriter.reset();
+    
+    // Setup novo slide
+    this.currentSlideIndex = slideIndex;
+    this.typewriter.setup(text, font, color, maxWidth);
+  }
+
+  advance() {
+    this.typewriter.advance();
+  }
+
+  render(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    this.typewriter.render(ctx, x, y);
+  }
+
+  isComplete() {
+    return this.typewriter.isComplete();
+  }
+}
+
+// USO CORRETO - Crie UMA instância global:
+const slideTextManager = new SlideTextManager();
 
 interface Slide {
   id: string;
@@ -1027,19 +1118,18 @@ const VideoSlidePage = () => {
         
   // totalFrames é definido após o cálculo de durationMsEffective
         
-  // Typewriter renderer para este slide
-  const typewriterRenderer = new TypewriterRenderer();
-  let typewriterSetup = false;
-        if (captionText) {
-          // Preparar fonte e configurações para o typewriter
-          const SAFE_MARGIN = 50;
-          const baseFont = 48;
-          const fontSizePX = Math.round(baseFont * 1.2);
-          const font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
-          const maxW = canvas.width - (SAFE_MARGIN * 2) - 40; // padding
+  // CORREÇÃO: Usar SlideTextManager global ao invés de TypewriterRenderer individual
+  if (captionText) {
+    // Preparar fonte e configurações para o typewriter
+    const SAFE_MARGIN = 50;
+    const baseFont = 48;
+    const fontSizePX = Math.round(baseFont * 1.2);
+    const font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
+    const maxW = canvas.width - (SAFE_MARGIN * 2) - 40; // padding
 
-          typewriterRenderer.setup(captionText, font, '#ffffff', maxW);
-        }
+    // Configurar novo slide no gerenciador global
+    slideTextManager.startNewSlide(i, captionText, font, '#ffffff', maxW);
+  }
 
   // Protocolo de garantia: tempos mínimos para animações
   const BAR_DURATION_MS = 900; // animação suave da barra (~0.9s)
@@ -1200,17 +1290,17 @@ const VideoSlidePage = () => {
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-            // 2) Texto (typewriter) usando TypewriterRenderer
+            // 2) Texto (typewriter) usando SlideTextManager global
             const typewriterStartDelayMs = preLineDurationMs;
             if (elapsedMs >= typewriterStartDelayMs) {
               if (!typewriterStarted) {
                 typewriterStarted = true;
               }
-              // Avançar 1 caractere por frame
-              typewriterRenderer.advance();
+              // Avançar 1 caractere por frame com detecção automática de mudança de slide
+              slideTextManager.advance();
               
               // Renderizar texto com fundo vermelho usando o sistema de cache
-              typewriterRenderer.render(ctx, textLeft, y);
+              slideTextManager.render(ctx, textLeft, y);
             }
 
             ctx.restore();
