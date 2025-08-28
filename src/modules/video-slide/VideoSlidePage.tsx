@@ -922,17 +922,22 @@ const VideoSlidePage = () => {
       }
       
       // Preferir H.264 (MP4) original que gerava 34MB - configurações restauradas
-      // CORREÇÃO 3: MediaRecorder otimizado
+      // CORREÇÃO 3A: H.264 em container WebM (mais compatível)
       const options = {
-        mimeType: 'video/webm;codecs=vp9',
+        mimeType: 'video/webm;codecs=h264',
         videoBitsPerSecond: 25_000_000, // 25 Mbps
       };
       
       // Verificação de suporte ao codec
       if (!(window as any).MediaRecorder?.isTypeSupported?.(options.mimeType)) {
-        console.warn('VP9 não suportado, tentando VP8...');
-        options.mimeType = 'video/webm;codecs=vp8';
-        options.videoBitsPerSecond = 20_000_000; // Reduzir bitrate para VP8
+        console.warn('H.264 em WebM não suportado, tentando VP9...');
+        options.mimeType = 'video/webm;codecs=vp9';
+        
+        if (!(window as any).MediaRecorder?.isTypeSupported?.(options.mimeType)) {
+          console.warn('VP9 não suportado, usando VP8...');
+          options.mimeType = 'video/webm;codecs=vp8';
+          options.videoBitsPerSecond = 20_000_000; // Reduzir bitrate para VP8
+        }
       }
       
       const mediaRecorder = new MediaRecorder(stream, options);      const chunks: BlobPart[] = [];
