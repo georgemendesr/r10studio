@@ -82,15 +82,19 @@ function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: n
 }
 
 // Render mais defensivo
-function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40) {
+function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40, frameNumber: number = 0) {
   if (!textWasSetup || !currentSlideText || textLines.length === 0) {
     return;
   }
   
-  // Proteção contra loops infinitos
-  if (currentCharCount < currentSlideText.length) {
-    currentCharCount++;
-  }
+  // CORREÇÃO 2: Typewriter determinístico baseado em frames
+  const CHARS_PER_SECOND = 30;
+  const typewriterDuration = currentSlideText.length / CHARS_PER_SECOND;
+  const typewriterFrames = typewriterDuration * 30; // assumindo 30 FPS
+  const typewriterProgress = Math.min(1, frameNumber / typewriterFrames);
+  
+  // Calcular quantos caracteres mostrar baseado no progresso
+  currentCharCount = Math.floor(typewriterProgress * currentSlideText.length);
   
   // Debug a cada 60 frames (2 segundos)
   if (currentCharCount % 60 === 0) {
@@ -99,6 +103,9 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
   
   let charsSoFar = 0;
   let yOffset = 0;
+  
+  // CORREÇÃO 1: Constante para espaçamento entre blocos
+  const BLOCK_GAP = 8; // pixels de espaçamento entre blocos
   
   try {
     for (let i = 0; i < textLines.length; i++) {
@@ -134,7 +141,8 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
       if (charsSoFar + charsInThisLine > currentCharCount) break;
       
       charsSoFar += charsInThisLine;
-      yOffset += lineHeight;
+      // CORREÇÃO 1: Adicionar gap entre blocos
+      yOffset += lineHeight + BLOCK_GAP;
     }
   } catch (error) {
     console.error('Erro no render:', error);
@@ -821,10 +829,10 @@ const VideoSlidePage = () => {
     try {
       toast.loading("Gerando seu vídeo...", { id: "generating" });
       
-      // Criar um canvas para renderizar o vídeo - QUALIDADE MÁXIMA
+      // CORREÇÃO 4: Criar canvas otimizado sem blur (dimensões 1:1, sem devicePixelRatio)
       const canvas = document.createElement('canvas');
-      canvas.width = 1080;
-      canvas.height = 1920;
+      canvas.width = 1080;  // sem multiplicação por devicePixelRatio
+      canvas.height = 1920; // sem multiplicação por devicePixelRatio
       const ctx = canvas.getContext('2d', { 
         alpha: false, // Sem transparência para melhor performance
         desynchronized: true, // Melhor performance
@@ -889,18 +897,20 @@ const VideoSlidePage = () => {
       }
       
       // Preferir H.264 (MP4) original que gerava 34MB - configurações restauradas
-      const mimeCandidates = [
-        'video/mp4;codecs=avc1.42E01E',
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8',
-        'video/webm'
-      ];
-      const supportedMime = mimeCandidates.find((m) => (window as unknown as { MediaRecorder?: { isTypeSupported?: (m:string)=>boolean } }).MediaRecorder?.isTypeSupported?.(m));
-      const chosenMime = supportedMime || 'video/webm;codecs=vp8';
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: chosenMime,
-        videoBitsPerSecond: 15000000 // Bitrate original que gerava 34MB
-      });      const chunks: BlobPart[] = [];
+      // CORREÇÃO 3: MediaRecorder otimizado
+      const options = {
+        mimeType: 'video/webm;codecs=vp9',
+        videoBitsPerSecond: 25_000_000, // 25 Mbps
+      };
+      
+      // Verificação de suporte ao codec
+      if (!(window as any).MediaRecorder?.isTypeSupported?.(options.mimeType)) {
+        console.warn('VP9 não suportado, tentando VP8...');
+        options.mimeType = 'video/webm;codecs=vp8';
+        options.videoBitsPerSecond = 20_000_000; // Reduzir bitrate para VP8
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, options);      const chunks: BlobPart[] = [];
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -909,7 +919,7 @@ const VideoSlidePage = () => {
       };
       
       mediaRecorder.onstop = async () => {
-  const blobType = mediaRecorder.mimeType || chosenMime;
+  const blobType = mediaRecorder.mimeType || options.mimeType;
   const blob = new Blob(chunks, { type: blobType });
   const fileExtension = blobType.includes('mp4') ? 'mp4' : 'webm';
   const url = URL.createObjectURL(blob);
@@ -947,9 +957,25 @@ const VideoSlidePage = () => {
         } catch {}
         setIsGenerating(false);
       };
+      // CORREÇÃO 5: Garantir que fonte Poppins está carregada antes de iniciar
+      async function ensurePoppins() {
+        const fontString = '800 56px Poppins';
+        if (document.fonts && document.fonts.check) {
+          if (!document.fonts.check(fontString)) {
+            try {
+              await document.fonts.load(fontString);
+              console.log('Fonte Poppins carregada com sucesso');
+            } catch (e) {
+              console.warn('Erro ao carregar Poppins:', e);
+            }
+          }
+        }
+      }
       
-      // Iniciar gravação
-      mediaRecorder.start();
+      await ensurePoppins();
+      
+      // CORREÇÃO 3: Iniciar gravação com timeslice
+      mediaRecorder.start(100); // Capturar dados a cada 100ms
       
       // Iniciar áudio sincronizado se houver (antes da renderização)
       if (audioElement && audioContext) {
