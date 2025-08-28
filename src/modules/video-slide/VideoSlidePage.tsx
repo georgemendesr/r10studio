@@ -83,7 +83,10 @@ function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: n
 
 // Render mais defensivo
 function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40, frameNumber: number = 0) {
+  console.log('🎬 renderTypewriter chamada:', { textWasSetup, currentSlideText: currentSlideText?.length, textLines: textLines.length });
+  
   if (!textWasSetup || !currentSlideText || textLines.length === 0) {
+    console.warn('❌ renderTypewriter: condições não atendidas:', { textWasSetup, currentSlideText: !!currentSlideText, textLines: textLines.length });
     return;
   }
   
@@ -94,9 +97,14 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
   const typewriterProgress = Math.min(1, frameNumber / typewriterFrames);
   
   // Calcular quantos caracteres mostrar baseado no progresso
-  currentCharCount = Math.floor(typewriterProgress * currentSlideText.length);
+  // SOLUÇÃO TEMPORÁRIA: Force texto completo enquanto investigamos o typewriter
+  currentCharCount = currentSlideText.length; // sempre mostrar tudo
+  // currentCharCount = Math.floor(typewriterProgress * currentSlideText.length);
+  
+  console.log('💯 FORÇANDO TEXTO COMPLETO:', { totalChars: currentSlideText.length, showing: currentCharCount });
   
   // Debug a cada 60 frames (2 segundos)
+  if (currentCharCount % 60 === 0) {
   if (currentCharCount % 60 === 0) {
     console.log('Slide', lastSlideIndex, '- Progresso:', currentCharCount, '/', currentSlideText.length);
   }
@@ -125,17 +133,22 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
       }
       
       if (textToShow) {
+        console.log('🎨 Desenhando linha:', textToShow); // DEBUG
+        
         const textWidth = ctx.measureText(textToShow).width;
         const padding = 20;
         const rectHeight = lineHeight;
         
+        // IMPORTANTE: Garantir que as cores estão corretas
         // Fundo vermelho
-        ctx.fillStyle = '#cb403a';
+        ctx.fillStyle = '#DC2626'; // Vermelho mais forte
         ctx.fillRect(x, y + yOffset, textWidth + padding * 2, rectHeight);
         
-        // Texto branco
-        ctx.fillStyle = '#ffffff';
+        // IMPORTANTE: Texto branco DEPOIS do retângulo
+        ctx.fillStyle = '#FFFFFF'; // Branco garantido
         ctx.fillText(textToShow, x + padding, y + yOffset + 5);
+        
+        console.log('✅ Linha renderizada:', { textToShow, x, y: y + yOffset, width: textWidth + padding * 2 });
       }
       
       if (charsSoFar + charsInThisLine > currentCharCount) break;
@@ -151,21 +164,25 @@ function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, l
 
 // Função principal para renderizar texto do slide com mais verificações
 function renderSlideText(ctx: CanvasRenderingContext2D, slideIndex: number, captionText: string, elapsedMs: number, typewriterStartDelayMs: number, textLeft: number, y: number) {
+  // CORREÇÃO URGENTE: Debug para verificar se função é chamada
+  console.log('🔍 renderSlideText chamada:', { slideIndex, captionText: captionText?.substring(0, 30), elapsedMs, typewriterStartDelayMs });
+  
   // Verificações básicas
   if (!captionText || typeof slideIndex !== 'number') {
+    console.warn('❌ Texto ou slideIndex inválido:', { captionText, slideIndex });
     return;
   }
   
   // DETECTA SLIDE NOVO com log
   if (slideIndex !== lastSlideIndex) {
-    console.log('MUDANÇA DE SLIDE:', lastSlideIndex, '->', slideIndex);
-    console.log('Texto do novo slide:', captionText.substring(0, 50) + '...');
+    console.log('🔄 MUDANÇA DE SLIDE:', lastSlideIndex, '->', slideIndex);
+    console.log('📝 Texto do novo slide:', captionText.substring(0, 50) + '...');
     textWasSetup = false;
   }
   
   // Setup quando necessário
   if (elapsedMs >= typewriterStartDelayMs && !textWasSetup) {
-    console.log('Iniciando setup do slide', slideIndex, 'no frame em elapsedMs:', elapsedMs);
+    console.log('⚙️ Iniciando setup do slide', slideIndex, 'no frame em elapsedMs:', elapsedMs);
     
     // Salva e restaura configurações do contexto
     ctx.save();
@@ -176,8 +193,16 @@ function renderSlideText(ctx: CanvasRenderingContext2D, slideIndex: number, capt
   
   // Render se está pronto
   if (textWasSetup && elapsedMs >= typewriterStartDelayMs) {
+    console.log('🎨 Renderizando typewriter:', { textWasSetup, elapsedMs, currentCharCount, textLength: currentSlideText.length });
+    
+    // CORREÇÃO 1: Garantir que o texto é desenhado por cima - usar ctx.save/restore
     ctx.save();
+    
+    // IMPORTANTE: Garantir configurações corretas do texto
     ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
+    ctx.textAlign = 'left'; // ou conforme necessário
+    ctx.textBaseline = 'top';
+    
     renderTypewriter(ctx, textLeft, y);
     ctx.restore();
   }
