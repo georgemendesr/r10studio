@@ -10,209 +10,11 @@ import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
 
-// CORREÇÃO - Limpa recursos para evitar acúmulo após 2º slide
+// R10-FIXPACK-001 - Novo engine de renderização determinístico
+// Nota: imports de um engine experimental foram removidos por estarem vazios/não utilizados
 
-// Variáveis globais
-let currentSlideText = '';
-let currentCharCount = 0;
-let textLines: string[] = [];
-let lastSlideIndex = -1;
-let textWasSetup = false;
-
-// LIMPEZA FORÇADA antes de cada slide novo
-function cleanupSlideResources() {
-  currentSlideText = '';
-  currentCharCount = 0;
-  textLines = []; // Limpa array
-  textWasSetup = false;
-  
-  // FORÇA garbage collection se possível
-  if ((window as any).gc) {
-    (window as any).gc();
-  }
-}
-
-// Setup mais robusto
-function setupSlideText(text: string, ctx: CanvasRenderingContext2D, maxWidth: number, slideIndex: number) {
-  console.log('=== SETUP SLIDE', slideIndex, '- Limpando recursos anteriores ===');
-  
-  // LIMPA TUDO primeiro
-  cleanupSlideResources();
-  
-  currentSlideText = text || '';
-  currentCharCount = 0;
-  lastSlideIndex = slideIndex;
-  textWasSetup = true;
-  
-  // FALLBACK se texto estiver vazio
-  if (!currentSlideText) {
-    console.warn('Texto vazio no slide', slideIndex);
-    return;
-  }
-  
-  // Configuração de contexto LIMPA
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  
-  // Pre-calcula linhas
-  const words = currentSlideText.split(' ');
-  let currentLine = '';
-  
-  try {
-    for (const word of words) {
-      const testLine = currentLine + (currentLine ? ' ' : '') + word;
-      const metrics = ctx.measureText(testLine);
-      
-      if (metrics.width <= maxWidth) {
-        currentLine = testLine;
-      } else {
-        if (currentLine) textLines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    if (currentLine) textLines.push(currentLine);
-    
-    console.log('Slide', slideIndex, '- Chars:', currentSlideText.length, 'Linhas:', textLines.length);
-    
-  } catch (error) {
-    console.error('Erro no measureText:', error);
-    // Fallback: uma linha só
-    textLines = [currentSlideText.substring(0, 50)];
-  }
-}
-
-// Render mais defensivo
-function renderTypewriter(ctx: CanvasRenderingContext2D, x: number, y: number, lineHeight = 40, frameNumber: number = 0) {
-  console.log('🎬 renderTypewriter chamada:', { textWasSetup, currentSlideText: currentSlideText?.length, textLines: textLines.length });
-  
-  if (!textWasSetup || !currentSlideText || textLines.length === 0) {
-    console.warn('❌ renderTypewriter: condições não atendidas:', { textWasSetup, currentSlideText: !!currentSlideText, textLines: textLines.length });
-    return;
-  }
-  
-  // CORREÇÃO 2: Typewriter determinístico baseado em frames
-  const CHARS_PER_SECOND = 30;
-  const typewriterDuration = currentSlideText.length / CHARS_PER_SECOND;
-  const typewriterFrames = typewriterDuration * 30; // assumindo 30 FPS
-  const typewriterProgress = Math.min(1, frameNumber / typewriterFrames);
-  
-  // Calcular quantos caracteres mostrar baseado no progresso
-  // SOLUÇÃO TEMPORÁRIA: Force texto completo enquanto investigamos o typewriter
-  currentCharCount = currentSlideText.length; // sempre mostrar tudo
-  // currentCharCount = Math.floor(typewriterProgress * currentSlideText.length);
-  
-  console.log('💯 FORÇANDO TEXTO COMPLETO:', { totalChars: currentSlideText.length, showing: currentCharCount });
-  
-  // Debug a cada 60 frames (2 segundos)
-  if (currentCharCount % 60 === 0) {
-  if (currentCharCount % 60 === 0) {
-    console.log('Slide', lastSlideIndex, '- Progresso:', currentCharCount, '/', currentSlideText.length);
-  }
-  
-  let charsSoFar = 0;
-  let yOffset = 0;
-  
-  // CORREÇÃO 1: Constante para espaçamento entre blocos
-  const BLOCK_GAP = 8; // pixels de espaçamento entre blocos
-  
-  try {
-    for (let i = 0; i < textLines.length; i++) {
-      const line = textLines[i];
-      if (!line || charsSoFar >= currentCharCount) break;
-      
-      const charsInThisLine = line.length + 1;
-      
-      let textToShow = '';
-      if (charsSoFar + charsInThisLine <= currentCharCount) {
-        // Linha completa
-        textToShow = line;
-      } else {
-        // Linha parcial
-        const charsToShow = Math.max(0, currentCharCount - charsSoFar);
-        textToShow = line.substring(0, charsToShow);
-      }
-      
-      if (textToShow) {
-        console.log('🎨 Desenhando linha:', textToShow); // DEBUG
-        
-        const textWidth = ctx.measureText(textToShow).width;
-        const padding = 20;
-        const rectHeight = lineHeight;
-        
-        // IMPORTANTE: Garantir que as cores estão corretas
-        // Fundo vermelho
-        ctx.fillStyle = '#DC2626'; // Vermelho mais forte
-        ctx.fillRect(x, y + yOffset, textWidth + padding * 2, rectHeight);
-        
-        // IMPORTANTE: Texto branco DEPOIS do retângulo
-        ctx.fillStyle = '#FFFFFF'; // Branco garantido
-        ctx.fillText(textToShow, x + padding, y + yOffset + 5);
-        
-        console.log('✅ Linha renderizada:', { textToShow, x, y: y + yOffset, width: textWidth + padding * 2 });
-      }
-      
-      if (charsSoFar + charsInThisLine > currentCharCount) break;
-      
-      charsSoFar += charsInThisLine;
-      // CORREÇÃO 1: Adicionar gap entre blocos
-      yOffset += lineHeight + BLOCK_GAP;
-    }
-  } catch (error) {
-    console.error('Erro no render:', error);
-  }
-}
-
-// Função principal para renderizar texto do slide com mais verificações
-function renderSlideText(ctx: CanvasRenderingContext2D, slideIndex: number, captionText: string, elapsedMs: number, typewriterStartDelayMs: number, textLeft: number, y: number) {
-  // CORREÇÃO URGENTE: Debug para verificar se função é chamada
-  console.log('🔍 renderSlideText chamada:', { slideIndex, captionText: captionText?.substring(0, 30), elapsedMs, typewriterStartDelayMs });
-  
-  // Verificações básicas
-  if (!captionText || typeof slideIndex !== 'number') {
-    console.warn('❌ Texto ou slideIndex inválido:', { captionText, slideIndex });
-    return;
-  }
-  
-  // DETECTA SLIDE NOVO com log
-  if (slideIndex !== lastSlideIndex) {
-    console.log('🔄 MUDANÇA DE SLIDE:', lastSlideIndex, '->', slideIndex);
-    console.log('📝 Texto do novo slide:', captionText.substring(0, 50) + '...');
-    textWasSetup = false;
-  }
-  
-  // Setup quando necessário
-  if (elapsedMs >= typewriterStartDelayMs && !textWasSetup) {
-    console.log('⚙️ Iniciando setup do slide', slideIndex, 'no frame em elapsedMs:', elapsedMs);
-    
-    // Salva e restaura configurações do contexto
-    ctx.save();
-    ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
-    setupSlideText(captionText, ctx, 1080 - 100 - 40, slideIndex);
-    ctx.restore();
-  }
-  
-  // Render se está pronto
-  if (textWasSetup && elapsedMs >= typewriterStartDelayMs) {
-    console.log('🎨 Renderizando typewriter:', { textWasSetup, elapsedMs, currentCharCount, textLength: currentSlideText.length });
-    
-    // CORREÇÃO 1: Garantir que o texto é desenhado por cima - usar ctx.save/restore
-    ctx.save();
-    
-    // IMPORTANTE: Garantir configurações corretas do texto
-    ctx.font = `800 ${Math.round(48 * 1.2)}px Poppins, Arial, sans-serif`;
-    ctx.textAlign = 'left'; // ou conforme necessário
-    ctx.textBaseline = 'top';
-    
-    renderTypewriter(ctx, textLeft, y);
-    ctx.restore();
-  }
-}
-
-// ADICIONE também esta limpeza no final de cada slide:
-function finishSlide() {
-  console.log('Finalizando slide', lastSlideIndex);
-  cleanupSlideResources();
-}
+// Função para converter Slide local para RenderSlide do engine
+// Removido: convertToRenderSlide e mapeamento de efeitos do engine experimental
 
 interface Slide {
   id: string;
@@ -280,6 +82,15 @@ const VideoSlidePage = () => {
   const savedWatermark = localStorage.getItem('r10-watermark');
   const savedVinhete = localStorage.getItem('r10-vinheta');
   const savedVinheteId = localStorage.getItem('r10-vinheta-id');
+  
+  // Carregar vinheta salva
+  const savedVinheta = localStorage.getItem('vinhetaVideo');
+  if (savedVinheta) {
+    console.log('Vinheta carregada automaticamente');
+    setEndingVideoUrl(savedVinheta);
+    setUseEndingVideo(true);
+  }
+  
   // Sempre usar a marca d'água oficial do portal, ignorando customizações
   const officialWatermark = '/logo-r10-piaui.png';
   if (!protectedUnlocked) {
@@ -578,15 +389,25 @@ const VideoSlidePage = () => {
         return;
       }
       
-      setEndingVideoFile(file);
-      const url = URL.createObjectURL(file);
-      setEndingVideoUrl(url);
-      setSelectedEndingId('custom');
-      setUseEndingVideo(true);
-      // Salvar URL da vinheta personalizada no localStorage
-      try { localStorage.setItem('r10-vinheta', url); } catch {}
-      try { localStorage.setItem('r10-vinheta-id', 'custom'); } catch {}
-      toast.success('Vinheta personalizada carregada!');
+      try {
+        // Criar URL do vídeo
+        setEndingVideoFile(file);
+        const url = URL.createObjectURL(file);
+        setEndingVideoUrl(url);
+        setSelectedEndingId('custom');
+        setUseEndingVideo(true);
+        
+        // Salvar URLs no localStorage (não o arquivo inteiro)
+        try { localStorage.setItem('r10-vinheta', url); } catch {}
+        try { localStorage.setItem('r10-vinheta-id', 'custom'); } catch {}
+        
+        console.log('✅ Vinheta carregada com sucesso!');
+        toast.success('Vinheta personalizada carregada!');
+        
+      } catch (error) {
+        console.error('Erro ao carregar vinheta:', error);
+        toast.error('Erro ao carregar vinheta. Tente um arquivo menor.');
+      }
     }
   };
 
@@ -854,10 +675,10 @@ const VideoSlidePage = () => {
     try {
       toast.loading("Gerando seu vídeo...", { id: "generating" });
       
-      // CORREÇÃO 4: Criar canvas otimizado sem blur (dimensões 1:1, sem devicePixelRatio)
+      // Criar um canvas para renderizar o vídeo - QUALIDADE MÁXIMA
       const canvas = document.createElement('canvas');
-      canvas.width = 1080;  // sem multiplicação por devicePixelRatio
-      canvas.height = 1920; // sem multiplicação por devicePixelRatio
+      canvas.width = 1080;
+      canvas.height = 1920;
       const ctx = canvas.getContext('2d', { 
         alpha: false, // Sem transparência para melhor performance
         desynchronized: true, // Melhor performance
@@ -922,25 +743,18 @@ const VideoSlidePage = () => {
       }
       
       // Preferir H.264 (MP4) original que gerava 34MB - configurações restauradas
-      // CORREÇÃO 3A: H.264 em container WebM (mais compatível)
-      const options = {
-        mimeType: 'video/webm;codecs=h264',
-        videoBitsPerSecond: 25_000_000, // 25 Mbps
-      };
-      
-      // Verificação de suporte ao codec
-      if (!(window as any).MediaRecorder?.isTypeSupported?.(options.mimeType)) {
-        console.warn('H.264 em WebM não suportado, tentando VP9...');
-        options.mimeType = 'video/webm;codecs=vp9';
-        
-        if (!(window as any).MediaRecorder?.isTypeSupported?.(options.mimeType)) {
-          console.warn('VP9 não suportado, usando VP8...');
-          options.mimeType = 'video/webm;codecs=vp8';
-          options.videoBitsPerSecond = 20_000_000; // Reduzir bitrate para VP8
-        }
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, options);      const chunks: BlobPart[] = [];
+      const mimeCandidates = [
+        'video/mp4;codecs=avc1.42E01E',
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm'
+      ];
+      const supportedMime = mimeCandidates.find((m) => (window as unknown as { MediaRecorder?: { isTypeSupported?: (m:string)=>boolean } }).MediaRecorder?.isTypeSupported?.(m));
+      const chosenMime = supportedMime || 'video/webm;codecs=vp8';
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: chosenMime,
+        videoBitsPerSecond: 15000000 // Bitrate original que gerava 34MB
+      });      const chunks: BlobPart[] = [];
       
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -949,7 +763,7 @@ const VideoSlidePage = () => {
       };
       
       mediaRecorder.onstop = async () => {
-  const blobType = mediaRecorder.mimeType || options.mimeType;
+  const blobType = mediaRecorder.mimeType || chosenMime;
   const blob = new Blob(chunks, { type: blobType });
   const fileExtension = blobType.includes('mp4') ? 'mp4' : 'webm';
   const url = URL.createObjectURL(blob);
@@ -987,25 +801,9 @@ const VideoSlidePage = () => {
         } catch {}
         setIsGenerating(false);
       };
-      // CORREÇÃO 5: Garantir que fonte Poppins está carregada antes de iniciar
-      async function ensurePoppins() {
-        const fontString = '800 56px Poppins';
-        if (document.fonts && document.fonts.check) {
-          if (!document.fonts.check(fontString)) {
-            try {
-              await document.fonts.load(fontString);
-              console.log('Fonte Poppins carregada com sucesso');
-            } catch (e) {
-              console.warn('Erro ao carregar Poppins:', e);
-            }
-          }
-        }
-      }
       
-      await ensurePoppins();
-      
-      // CORREÇÃO 3: Iniciar gravação com timeslice
-      mediaRecorder.start(100); // Capturar dados a cada 100ms
+      // Iniciar gravação
+      mediaRecorder.start();
       
       // Iniciar áudio sincronizado se houver (antes da renderização)
       if (audioElement && audioContext) {
@@ -1332,7 +1130,7 @@ const VideoSlidePage = () => {
             ctx.globalAlpha = 1.0;
           }
           
-          // CORRIGIDO: Linha amarela antes do texto + texto com typewriter usando TypewriterRenderer
+          // CORRIGIDO: Linha amarela antes do texto + texto com typewriter
           if (captionText) {
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1341,6 +1139,8 @@ const VideoSlidePage = () => {
             const fontSize = Math.round(48 * 1.2);
             const textLeft = SAFE_MARGIN;
             const barLeft = SAFE_MARGIN;
+            const maxTextWidth = canvas.width - SAFE_MARGIN * 2;
+            const BLOCK_GAP = 8; // espaçamento entre blocos vermelhos
 
             // Posição do texto (subir conjunto ~270px)
             let y = canvas.height - (200 + 270) - 100;
@@ -1359,9 +1159,76 @@ const VideoSlidePage = () => {
               ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
             }
 
-            // 2) Texto (typewriter) usando detecção robusta de slide
-            const typewriterStartDelayMs = preLineDurationMs;
-            renderSlideText(ctx, i, captionText, elapsedMs, typewriterStartDelayMs, textLeft, y);
+            // 2) Texto com efeito typewriter em blocos vermelhos
+            ctx.font = `800 ${fontSize}px Poppins, Arial, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+
+            // progresso do typewriter após a barra amarela
+            const startTextMs = BAR_DURATION_MS + 100;
+            const progressedMs = Math.max(0, elapsedMs - startTextMs);
+            const charsToShow = Math.min(captionText.length, Math.floor(progressedMs / CHAR_TIME_MS));
+
+            if (charsToShow > 0) {
+              const textToDraw = captionText.slice(0, charsToShow);
+
+              // Quebra de linha por largura
+              const wrapByWidth = (text: string, maxW: number) => {
+                const hardLines = text.split(/\r?\n/);
+                const out: string[] = [];
+                for (const hard of hardLines) {
+                  const words = hard.split(/\s+/).filter(Boolean);
+                  let line = '';
+                  for (const w of words) {
+                    const test = line ? line + ' ' + w : w;
+                    if (ctx.measureText(test).width <= maxW) {
+                      line = test;
+                    } else {
+                      if (line) out.push(line);
+                      // palavra muito grande: quebra forçada se necessário
+                      if (ctx.measureText(w).width > maxW) {
+                        let acc = '';
+                        for (const ch of w) {
+                          const testCh = acc + ch;
+                          if (ctx.measureText(testCh).width <= maxW) acc = testCh; else { out.push(acc); acc = ch; }
+                        }
+                        line = acc;
+                      } else {
+                        line = w;
+                      }
+                    }
+                  }
+                  if (line) out.push(line);
+                }
+                return out;
+              };
+
+              const lines = wrapByWidth(textToDraw, maxTextWidth);
+              // métricas dos blocos
+              const blockPadX = 18;
+              const blockPadY = 12;
+              const blockHeight = fontSize + blockPadY * 2;
+              let yCursor = y;
+
+              for (const line of lines) {
+                const lineW = Math.ceil(ctx.measureText(line).width);
+                const rectX = textLeft - blockPadX;
+                const rectY = yCursor;
+                const rectW = Math.min(maxTextWidth + blockPadX * 2, lineW + blockPadX * 2);
+                const rectH = blockHeight;
+
+                // bloco vermelho
+                ctx.fillStyle = '#DC2626';
+                ctx.fillRect(rectX, rectY, rectW, rectH);
+
+                // texto branco centralizado verticalmente no bloco
+                ctx.fillStyle = '#FFFFFF';
+                const textY = rectY + blockPadY; // baseline top + padding
+                ctx.fillText(line, textLeft, textY);
+
+                yCursor += rectH + BLOCK_GAP;
+              }
+            }
 
             ctx.restore();
           }
@@ -2214,11 +2081,54 @@ const VideoSlidePage = () => {
 
             {/* Vinheta de Encerramento – upload obrigatório */}
             <div className="pt-2 border-t">
-              <Label className="text-base font-medium">🎬 Vinheta Final</Label>
+              <Label className="text-base font-medium">🎬 Vinheta Final *OBRIGATÓRIA*</Label>
               <p className="text-sm text-muted-foreground mb-3">
                 A vinheta final (vídeo) será inserida automaticamente após os slides.
+                {(endingVideoFile || endingVideoUrl) && (
+                  <span className="ml-2 text-green-600 font-medium">
+                    ✓ Vinheta carregada
+                  </span>
+                )}
               </p>
-              {/* Upload acontece via Área Protegida (acima). */}
+              
+              {/* Upload público da vinheta */}
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="file"
+                  id="ending-public"
+                  accept=".mp4,.webm"
+                  onChange={handleEndingVideoUpload}
+                  className="hidden"
+                />
+                <Button asChild size="sm" variant="outline">
+                  <label htmlFor="ending-public" className="cursor-pointer">
+                    <UploadIcon className="w-4 h-4 mr-2" />
+                    {endingVideoFile ? 'Trocar vinheta' : 'Enviar vinheta'}
+                  </label>
+                </Button>
+                {(endingVideoFile || endingVideoUrl) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={()=>{
+                      try {
+                        const url = endingVideoUrl;
+                        if (url) {
+                          localStorage.setItem('r10-vinhete', url);
+                          setVinheteUrl(url);
+                          setUseEndingVideo(true);
+                          toast.success('Vinheta salva como padrão');
+                        } else {
+                          toast.error('Envie um vídeo de vinheta primeiro');
+                        }
+                      } catch {}
+                    }}
+                  >Salvar como padrão</Button>
+                )}
+              </div>
+              {(endingVideoFile || endingVideoUrl) && (
+                <p className="text-xs text-muted-foreground mt-1">📄 {endingVideoFile?.name || 'Vinheta carregada'}</p>
+              )}
             </div>
           </CardContent>
         )}
