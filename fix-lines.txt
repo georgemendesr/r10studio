@@ -1,0 +1,4 @@
+Linha 596: // VINHETA É OBRIGATÓRIA - todos os vídeos devem ter
+Linha 598: toast.error("⚠️ VINHETA OBRIGATÓRIA: Faça upload de uma vinheta final para gerar o vídeo");
+
+Copie e cole essas linhas corrigidas manualmente no arquivo VideoSlidePage.tsx
