@@ -26,5 +26,10 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/**/*.bak.*",
+    "src/**/*.backup.tsx",
+    "src/**/*.old.tsx"
+  ]
 }

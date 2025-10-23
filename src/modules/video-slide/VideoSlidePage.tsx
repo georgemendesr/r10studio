@@ -1825,7 +1825,7 @@ const VideoSlidePage = () => {
                 <Label htmlFor="keep-first-caption" className="text-sm">Texto contínuo</Label>
               </div>
             </div>
-            {/* Logo / Marca d'água â€“ oculto por padrão (controle permanente) */}
+            {/* Logo / Marca d'água – oculto por padrão (controle permanente) */}
             {/* Trilha Sonora */}
             <div>
               <Label className="text-base font-medium">🎵 Trilha Sonora</Label>
@@ -2084,7 +2084,7 @@ const VideoSlidePage = () => {
             className="w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all bg-white"
             title="Aleatorizar efeitos (Ctrl+Shift+R)"
           >
-            ðŸŽ²
+            🎲
           </Button>
           <Button
             onClick={() => {
