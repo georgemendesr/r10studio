@@ -9,10 +9,9 @@ import { toast } from "sonner";
 import PunchZoomYoYo from "@/components/PunchZoomYoYo";
 import { v4 as uuidv4 } from "uuid";
 import { extractFromUrlOrText, type ExtractionResult } from "@/utils/contentExtraction";
-// R10-FIXPACK-001 - Novo engine de renderização determinístico
-// Nota: imports de um engine experimental foram removidos por estarem vazios/não utilizados
-// Função para converter Slide local para RenderSlide do engine
-// Removido: convertToRenderSlide e mapeamento de efeitos do engine experimental
+// R10-FIXPACK-002 - Engine de renderização otimizado para performance
+import { precomputeTextLayout, drawTypewriterFrame, drawYellowBar, type TextLayout } from "./engine/textRenderer";
+import { FrameTimer, TIMING, calculateMinSlideDuration } from "./engine/frameTimer";
 interface Slide {
   id: string;
   // mídia do slide: imagem (dataURL/URL) ou vídeo (URL)
@@ -41,7 +40,7 @@ const VideoSlidePage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(true);
   // Área protegida
-  const [protectedUnlocked, setProtectedUnlocked] = useState<boolean>(()=>{
+  const [protectedUnlocked, setProtectedUnlocked] = useState<boolean>(() => {
     try { return localStorage.getItem('r10-protected') === '1'; } catch { return false; }
   });
   const [protectedInput, setProtectedInput] = useState<string>("");
@@ -70,24 +69,24 @@ const VideoSlidePage = () => {
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   // Carregar configurações permanentes do localStorage
   useEffect(() => {
-  const savedWatermark = localStorage.getItem('r10-watermark');
-  const savedVinhete = localStorage.getItem('r10-vinheta');
-  const savedVinheteId = localStorage.getItem('r10-vinheta-id');
-  // Carregar vinheta salva
-  const savedVinheta = localStorage.getItem('vinhetaVideo');
-  if (savedVinheta) {
-    console.log('Vinheta carregada automaticamente');
-    setEndingVideoUrl(savedVinheta);
-    setUseEndingVideo(true);
-  }
-  // Sempre usar a marca d'água oficial do portal, ignorando customizações
-  const officialWatermark = '/logo-r10-piaui.png';
-  if (!protectedUnlocked) {
-    setWatermark(prev => ({ ...prev, file: officialWatermark }));
-    try { localStorage.setItem('r10-watermark', officialWatermark); } catch {}
-  } else if (savedWatermark) {
-    setWatermark(prev => ({ ...prev, file: savedWatermark }));
-  }
+    const savedWatermark = localStorage.getItem('r10-watermark');
+    const savedVinhete = localStorage.getItem('r10-vinheta');
+    const savedVinheteId = localStorage.getItem('r10-vinheta-id');
+    // Carregar vinheta salva
+    const savedVinheta = localStorage.getItem('vinhetaVideo');
+    if (savedVinheta) {
+      console.log('Vinheta carregada automaticamente');
+      setEndingVideoUrl(savedVinheta);
+      setUseEndingVideo(true);
+    }
+    // Sempre usar a marca d'água oficial do portal, ignorando customizações
+    const officialWatermark = '/logo-r10-piaui.png';
+    if (!protectedUnlocked) {
+      setWatermark(prev => ({ ...prev, file: officialWatermark }));
+      try { localStorage.setItem('r10-watermark', officialWatermark); } catch { }
+    } else if (savedWatermark) {
+      setWatermark(prev => ({ ...prev, file: savedWatermark }));
+    }
     if (savedVinhete) {
       setVinheteUrl(savedVinhete);
       setEndingVideoUrl(savedVinhete);
@@ -100,13 +99,13 @@ const VideoSlidePage = () => {
   // Handlers para configurações permanentes
   const handleWatermarkChange = (file: string) => {
     setWatermark(prev => ({ ...prev, file }));
-    try { localStorage.setItem('r10-watermark', file); } catch {}
+    try { localStorage.setItem('r10-watermark', file); } catch { }
   };
   const handleVinheteChange = (file: string) => {
     setVinheteUrl(file);
     setUseEndingVideo(!!file);
     // Salvar vinheta no localStorage para persistência
-    try { localStorage.setItem('r10-vinheta', file); } catch {}
+    try { localStorage.setItem('r10-vinheta', file); } catch { }
   };
   // Função para controlar prévia de áudio
   const toggleAudioPreview = (audioFile: string, audioId: string) => {
@@ -163,59 +162,59 @@ const VideoSlidePage = () => {
   }, [currentPreviewAudio]);
   // Logos pré-definidas disponíveis
   const predefinedLogos = [
-    { 
-      id: 'none', 
-      name: '🚫 Sem Logo', 
-      file: '', 
-      description: 'Vídeo sem marca d\'água' 
+    {
+      id: 'none',
+      name: '🚫 Sem Logo',
+      file: '',
+      description: 'Vídeo sem marca d\'água'
     },
-    { 
-      id: 'custom', 
-      name: 'Logo Personalizada', 
-      file: watermark.file, 
-      description: 'Upload da sua própria marca d\'água' 
+    {
+      id: 'custom',
+      name: 'Logo Personalizada',
+      file: watermark.file,
+      description: 'Upload da sua própria marca d\'água'
     }
   ];
   // Vinhetas de encerramento pré-cadastradas
   const predefinedEndings = [
-    { 
-      id: 'custom', 
-      name: 'Upload Personalizada', 
-      file: '', 
-      description: 'Sua vinheta personalizada - OBRIGATÓRIA' 
+    {
+      id: 'custom',
+      name: 'Upload Personalizada',
+      file: '',
+      description: 'Sua vinheta personalizada - OBRIGATÓRIA'
     }
   ];
   // Trilhas sonoras pré-cadastradas
   const predefinedAudios = [
-    { 
-      id: 'none', 
-      name: 'Sem Áudio', 
-      file: '', 
-      description: 'Vídeo sem trilha sonora' 
+    {
+      id: 'none',
+      name: 'Sem Áudio',
+      file: '',
+      description: 'Vídeo sem trilha sonora'
     },
-    { 
-      id: 'trilha1', 
-      name: '🎵 Trilha R10 - Slide 1', 
-      file: '/TRILHA R10 SLIDE (1).mp3', 
-      description: 'Trilha oficial R10 STUDIO - Versão 1' 
+    {
+      id: 'trilha1',
+      name: '🎵 Trilha R10 - Slide 1',
+      file: '/TRILHA R10 SLIDE (1).mp3',
+      description: 'Trilha oficial R10 STUDIO - Versão 1'
     },
-    { 
-      id: 'trilha2', 
-      name: '🎶 Trilha R10 - Slide 2', 
-      file: '/TRILHA R10 SLIDE (2).mp3', 
-      description: 'Trilha oficial R10 STUDIO - Versão 2' 
+    {
+      id: 'trilha2',
+      name: '🎶 Trilha R10 - Slide 2',
+      file: '/TRILHA R10 SLIDE (2).mp3',
+      description: 'Trilha oficial R10 STUDIO - Versão 2'
     },
-    { 
-      id: 'trilha3', 
-      name: '🎼 Trilha R10 - Slide 3', 
-      file: '/TRILHA R10 SLIDE (3).mp3', 
-      description: 'Trilha oficial R10 STUDIO - Versão 3' 
+    {
+      id: 'trilha3',
+      name: '🎼 Trilha R10 - Slide 3',
+      file: '/TRILHA R10 SLIDE (3).mp3',
+      description: 'Trilha oficial R10 STUDIO - Versão 3'
     },
-    { 
-      id: 'custom', 
-      name: 'Upload Personalizada', 
-      file: '', 
-      description: 'Sua trilha personalizada' 
+    {
+      id: 'custom',
+      name: 'Upload Personalizada',
+      file: '',
+      description: 'Sua trilha personalizada'
     }
   ];
   // Templates pré-configurados para jornalismo
@@ -232,7 +231,7 @@ const VideoSlidePage = () => {
     },
     {
       id: 'precision',
-  name: 'Precision',
+      name: 'Precision',
       description: 'Zoom progressivo e preciso',
       effects: ['STEP_IN_PRECISION'],
       useFlash: false,
@@ -242,7 +241,7 @@ const VideoSlidePage = () => {
     },
     {
       id: 'aggressive',
-  name: 'Aggressive In-Out',
+      name: 'Aggressive In-Out',
       description: 'Vai e volta agressivo',
       effects: ['CUT_IN_OUT_AGGRESSIVE'],
       useFlash: false,
@@ -262,7 +261,7 @@ const VideoSlidePage = () => {
     },
     {
       id: 'hard4x',
-  name: 'Hard In 4x',
+      name: 'Hard In 4x',
       description: 'Punch rápido para 4x',
       effects: ['HARD_IN_4X'],
       useFlash: false,
@@ -319,8 +318,8 @@ const VideoSlidePage = () => {
         setEndingVideoFile(null); // Limpar arquivo custom se houver
         setUseEndingVideo(true);
         // Salvar vinheta selecionada no localStorage para persistência
-        try { localStorage.setItem('r10-vinheta', selectedEnding.file); } catch {}
-        try { localStorage.setItem('r10-vinheta-id', endingId); } catch {}
+        try { localStorage.setItem('r10-vinheta', selectedEnding.file); } catch { }
+        try { localStorage.setItem('r10-vinheta-id', endingId); } catch { }
       } else {
         // Para opção 'custom', manter estado atual mas exigir upload
         setUseEndingVideo(true);
@@ -340,7 +339,7 @@ const VideoSlidePage = () => {
       const url = URL.createObjectURL(file);
       setAudioUrl(url);
       setSelectedAudioId('custom');
-  toast.success('Áudio personalizado carregado!');
+      toast.success('Áudio personalizado carregado!');
     }
   };
   // Upload de vinheta personalizada
@@ -359,8 +358,8 @@ const VideoSlidePage = () => {
         setSelectedEndingId('custom');
         setUseEndingVideo(true);
         // Salvar URLs no localStorage (não o arquivo inteiro)
-        try { localStorage.setItem('r10-vinheta', url); } catch {}
-        try { localStorage.setItem('r10-vinheta-id', 'custom'); } catch {}
+        try { localStorage.setItem('r10-vinheta', url); } catch { }
+        try { localStorage.setItem('r10-vinheta-id', 'custom'); } catch { }
         console.log('✅ Vinheta carregada com sucesso!');
         toast.success('Vinheta personalizada carregada!');
       } catch (error) {
@@ -399,7 +398,7 @@ const VideoSlidePage = () => {
           ...slide,
           effect: effects[Math.floor(Math.random() * effects.length)]
         })));
-  toast.success("🎲 Efeitos aleatorizados!");
+        toast.success("🎲 Efeitos aleatorizados!");
       }
       return;
     }
@@ -442,7 +441,7 @@ const VideoSlidePage = () => {
         image: "",
         caption: "",
         effect: "STEP_IN_PRECISION",
-  textAnimation: "typewriter",
+        textAnimation: "typewriter",
         durationSec: 5,
         alignH: 'center',
         alignV: 'center',
@@ -453,7 +452,7 @@ const VideoSlidePage = () => {
     setSlides(slides.filter(slide => slide.id !== id));
   };
   const updateSlide = <K extends keyof Slide>(id: string, field: K, value: Slide[K]) => {
-    setSlides(slides.map(slide => 
+    setSlides(slides.map(slide =>
       slide.id === id ? { ...slide, [field]: value } : slide
     ));
   };
@@ -480,7 +479,7 @@ const VideoSlidePage = () => {
     const files = event.target.files;
     if (files && files.length > 0) {
       await processMultipleFiles(Array.from(files), id);
-  // CORREÇÃO: Força atualização da interface limpando e resetando o input
+      // CORREÇÃO: Força atualização da interface limpando e resetando o input
       event.target.value = '';
       // Força re-render
       setSlides(prev => [...prev]);
@@ -497,8 +496,8 @@ const VideoSlidePage = () => {
       toast.error(`Máximo de 20 slides permitidos para manter boa performance. Você tem ${slides.length} e está tentando adicionar ${mediaFiles.length}.`);
       return;
     }
-  toast.loading(`Processando ${mediaFiles.length} arquivo(s)...`, { id: "processing" });
-  try {
+    toast.loading(`Processando ${mediaFiles.length} arquivo(s)...`, { id: "processing" });
+    try {
       for (let i = 0; i < mediaFiles.length; i++) {
         const file = mediaFiles[i];
         const isVideo = file.type.startsWith('video/');
@@ -601,14 +600,14 @@ const VideoSlidePage = () => {
     setIsGenerating(true);
     try {
       toast.loading("Gerando seu vídeo...", { id: "generating" });
-  // Criar um canvas para renderizar o vídeo - QUALIDADE MÁXIMA
+      // Criar um canvas para renderizar o vídeo - QUALIDADE MÁXIMA
       const canvas = document.createElement('canvas');
       canvas.width = 1080;
       canvas.height = 1920;
-      const ctx = canvas.getContext('2d', { 
+      const ctx = canvas.getContext('2d', {
         alpha: false, // Sem transparência para melhor performance
         desynchronized: true, // Melhor performance
-        willReadFrequently: false 
+        willReadFrequently: false
       });
       if (!ctx) {
         throw new Error('Não foi possível criar contexto do canvas');
@@ -617,22 +616,22 @@ const VideoSlidePage = () => {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       // Configurar MediaRecorder para capturar o canvas + áudio se houver trilha
-      const FRAME_RATE = 30;
-      const FRAME_MS = 1000 / FRAME_RATE; // 33.333ms exatos
-  const stream = canvas.captureStream(FRAME_RATE);
-  const videoTrack = (stream.getVideoTracks()[0] as any);
-  // Tentar fixar 30 fps no track para maximizar qualidade/constância
-  try { await videoTrack?.applyConstraints?.({ frameRate: 30 }); } catch {}
-  const requestFrameIfSupported = () => {
-        try { if (videoTrack && typeof videoTrack.requestFrame === 'function') videoTrack.requestFrame(); } catch {}
+      const FRAME_RATE = TIMING.FRAME_RATE;
+      const FRAME_MS = TIMING.FRAME_MS;
+      const stream = canvas.captureStream(FRAME_RATE);
+      const videoTrack = (stream.getVideoTracks()[0] as any);
+      // Tentar fixar 30 fps no track para maximizar qualidade/constância
+      try { await videoTrack?.applyConstraints?.({ frameRate: 30 }); } catch { }
+      const requestFrameIfSupported = () => {
+        try { if (videoTrack && typeof videoTrack.requestFrame === 'function') videoTrack.requestFrame(); } catch { }
       };
-  // Utilitário de espera
-  const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+      // Timer de alta precisão para controle de frames
+      const frameTimer = new FrameTimer();
       // Criar audio context para mixer de áudio se houver trilha sonora
-  let audioContext: AudioContext | null = null;
-  let audioStream: MediaStream | null = null;
-  let audioElement: HTMLAudioElement | null = null;
-  let endingAudioElement: HTMLVideoElement | null = null; // usaremos o elemento da vinheta para áudio
+      let audioContext: AudioContext | null = null;
+      let audioStream: MediaStream | null = null;
+      let audioElement: HTMLAudioElement | null = null;
+      let endingAudioElement: HTMLVideoElement | null = null; // usaremos o elemento da vinheta para áudio
       if (audioUrl && selectedAudioId !== 'none') {
         try {
           audioContext = new AudioContext();
@@ -667,22 +666,22 @@ const VideoSlidePage = () => {
         'video/webm;codecs=vp8',
         'video/webm'
       ];
-      const supportedMime = mimeCandidates.find((m) => (window as unknown as { MediaRecorder?: { isTypeSupported?: (m:string)=>boolean } }).MediaRecorder?.isTypeSupported?.(m));
+      const supportedMime = mimeCandidates.find((m) => (window as unknown as { MediaRecorder?: { isTypeSupported?: (m: string) => boolean } }).MediaRecorder?.isTypeSupported?.(m));
       const chosenMime = supportedMime || 'video/webm;codecs=vp8';
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: chosenMime,
         videoBitsPerSecond: 15000000 // Bitrate original que gerava 34MB
-      });      const chunks: BlobPart[] = [];
+      }); const chunks: BlobPart[] = [];
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunks.push(event.data);
         }
       };
       mediaRecorder.onstop = async () => {
-  const blobType = mediaRecorder.mimeType || chosenMime;
-  const blob = new Blob(chunks, { type: blobType });
-  const fileExtension = blobType.includes('mp4') ? 'mp4' : 'webm';
-  const url = URL.createObjectURL(blob);
+        const blobType = mediaRecorder.mimeType || chosenMime;
+        const blob = new Blob(chunks, { type: blobType });
+        const fileExtension = blobType.includes('mp4') ? 'mp4' : 'webm';
+        const url = URL.createObjectURL(blob);
         // Salvar metadados no localStorage (não persistir Blob)
         const videoData = {
           id: uuidv4(),
@@ -699,7 +698,7 @@ const VideoSlidePage = () => {
         // Download automático
         const a = document.createElement('a');
         a.href = url;
-  a.download = `${title.replace(/[^a-zA-Z0-9\s]/g, '_').trim() || 'video'}.${fileExtension}`;
+        a.download = `${title.replace(/[^a-zA-Z0-9\s]/g, '_').trim() || 'video'}.${fileExtension}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -709,7 +708,7 @@ const VideoSlidePage = () => {
           if (currentPreviewAudio) {
             currentPreviewAudio.pause();
           }
-        } catch {}
+        } catch { }
         setIsGenerating(false);
       };
       // Iniciar gravação
@@ -725,11 +724,11 @@ const VideoSlidePage = () => {
           console.warn('Erro ao iniciar áudio:', error);
         }
       }
-  // Helper: especificação de efeitos PUNCH ZOOM - CORTES SECOS BRUSCOS + EFEITOS JORNALÍSTICOS
+      // Helper: especificação de efeitos PUNCH ZOOM - CORTES SECOS BRUSCOS + EFEITOS JORNALÍSTICOS
       const getEffectSpec = (effect: string) => {
         const map: Record<string, { durationMs: number; steps: Array<{ atMs: number; scale: number }> }> = {
           // STEP_IN_MULTI_IMPACT (antigo Denúncia Impacto): múltiplos punches em sequência
-          STEP_IN_MULTI_IMPACT: { 
+          STEP_IN_MULTI_IMPACT: {
             durationMs: 1000,
             steps: [
               { atMs: 0, scale: 1.1 },
@@ -796,8 +795,8 @@ const VideoSlidePage = () => {
       }
       // Pré-carregar vinheta (apenas vídeo)
       let vinheteVideo: HTMLVideoElement | null = null;
-      const finalVinheteUrl = useEndingVideo && endingVideoUrl ? endingVideoUrl : 
-                             useEndingVideo && endingVideoFile ? URL.createObjectURL(endingVideoFile) : '';
+      const finalVinheteUrl = useEndingVideo && endingVideoUrl ? endingVideoUrl :
+        useEndingVideo && endingVideoFile ? URL.createObjectURL(endingVideoFile) : '';
       if (finalVinheteUrl && useEndingVideo) {
         console.log('🎬 Carregando vinheta final:', finalVinheteUrl);
         vinheteVideo = document.createElement('video');
@@ -822,10 +821,10 @@ const VideoSlidePage = () => {
           vinheteVideo = null;
         }
       }
-  // Renderizar cada slide - TIMING E EFEITOS CORRIGIDOS
-  const startTime = performance.now();
-  const preloadedImages: (HTMLImageElement | null)[] = [];
-  const preloadedVideos: (HTMLVideoElement | null)[] = [];
+      // Renderizar cada slide - TIMING E EFEITOS CORRIGIDOS
+      const startTime = performance.now();
+      const preloadedImages: (HTMLImageElement | null)[] = [];
+      const preloadedVideos: (HTMLVideoElement | null)[] = [];
       // Pré-carregar todas as imagens
       for (let i = 0; i < slides.length; i++) {
         const s = slides[i];
@@ -839,7 +838,7 @@ const VideoSlidePage = () => {
             const onReady = () => { v.oncanplay = null; v.onerror = null; res(); };
             v.oncanplay = onReady;
             v.onerror = onReady;
-            try { v.load(); } catch {}
+            try { v.load(); } catch { }
           });
           preloadedVideos[i] = v;
           preloadedImages[i] = null;
@@ -861,56 +860,71 @@ const VideoSlidePage = () => {
       // Parâmetros de drift sutil por slide (movimento suave e aleatório após o punch)
       const driftParams = slides.map(() => ({
         // frequências baixas (ciclos por segundo)
-  f1: 0.06 + Math.random() * 0.06, // ~0.06–0.12 Hz
-  f2: 0.04 + Math.random() * 0.05, // ~0.04–0.09 Hz
+        f1: 0.06 + Math.random() * 0.06, // ~0.06–0.12 Hz
+        f2: 0.04 + Math.random() * 0.05, // ~0.04–0.09 Hz
         phase1: Math.random() * Math.PI * 2,
         phase2: Math.random() * Math.PI * 2,
-  ampShift: 0.35 + Math.random() * 0.25, // 35%–60% do alcance máximo permitido
-  ampScale: 0.004 + Math.random() * 0.004 // 0.4%–0.8% de variação de escala
+        ampShift: 0.35 + Math.random() * 0.25, // 35%–60% do alcance máximo permitido
+        ampScale: 0.004 + Math.random() * 0.004 // 0.4%–0.8% de variação de escala
       }));
       const clamp = (v: number, min: number, max: number) => (v < min ? min : v > max ? max : v);
-  for (let i = 0; i < slides.length; i++) {
+
+      // Iniciar timer de alta precisão para todo o loop de renderização
+      frameTimer.start();
+
+      for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
-  const isVideo = (slide.mediaType || 'image') === 'video' && !!preloadedVideos[i];
-  const videoEl = isVideo ? preloadedVideos[i]! : null;
-  const durationSecInput = slide.durationSec || (isVideo && videoEl && !isNaN(videoEl.duration) && videoEl.duration > 0 ? Math.min(videoEl.duration, 10) : 5);
+        const isVideo = (slide.mediaType || 'image') === 'video' && !!preloadedVideos[i];
+        const videoEl = isVideo ? preloadedVideos[i]! : null;
+        const durationSecInput = slide.durationSec || (isVideo && videoEl && !isNaN(videoEl.duration) && videoEl.duration > 0 ? Math.min(videoEl.duration, 10) : 5);
         const captionText = keepFirstCaption ? (slides[0]?.caption || '') : (slide.caption || '');
         const img = preloadedImages[i];
-  console.log(`🎬 Renderizando slide ${i + 1}/${slides.length} - Duração alvo: ${durationSecInput}s`);
-  // Efeito com timing preciso
-  const { durationMs, steps } = getEffectSpec(slide.effect || 'ALEATORIO');
-  const lastStepAtMs = steps.reduce((m, s) => Math.max(m, s.atMs), 0);
-  // totalFrames é definido após o cálculo de durationMsEffective
-  // CORREÇÃO: Usar função simples ao invés de classe complexa
-  let textSetupDone = false;
-  if (captionText) {
-    // Preparar fonte e configurações para o typewriter
-    const SAFE_MARGIN = 50;
-    const baseFont = 48;
-    const fontSizePX = Math.round(baseFont * 1.2);
-    const font = `800 ${fontSizePX}px Poppins, Arial, sans-serif`;
-    const maxW = canvas.width - (SAFE_MARGIN * 2) - 40; // padding
-    // Configuração será feita no primeiro frame onde o texto aparece
-  }
-  // Protocolo de garantia: tempos mínimos para animações
-  const BAR_DURATION_MS = 900; // animação suave da barra (~0.9s)
-  const POST_HOLD_MS = 600; // pequena pausa após texto completo
-  // Duração do typewriter baseada no número de caracteres (suave, consistente)
-  const CHAR_TIME_MS = 35; // ~28 chars/seg
-  // Slide deve durar pelo menos: barra + texto + hold final
-  const minRequiredMs = BAR_DURATION_MS + (captionText ? captionText.length * CHAR_TIME_MS + 800 : 0) + POST_HOLD_MS;
-  const durationMsEffective = Math.max(durationSecInput * 1000, minRequiredMs);
-  const totalFrames = Math.max(1, Math.round(durationMsEffective / FRAME_MS));
-  console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${(durationMsEffective/1000).toFixed(2)}s a ${FRAME_RATE}fps)`);
-  const slideStart = Date.now();
-  // Controle de vídeo: voltar a setar currentTime por frame
-  let lastVidTimeSet = -1;
-  // Estado do typewriter
-  let typewriterStarted = false;
+        console.log(`🎬 Renderizando slide ${i + 1}/${slides.length} - Duração alvo: ${durationSecInput}s`);
+        // Efeito com timing preciso
+        const { durationMs, steps } = getEffectSpec(slide.effect || 'ALEATORIO');
+        const lastStepAtMs = steps.reduce((m, s) => Math.max(m, s.atMs), 0);
+        // totalFrames é definido após o cálculo de durationMsEffective
+        // R10-FIXPACK-002: Pré-calcular layout do texto UMA VEZ antes do loop
+        const SAFE_MARGIN = 50;
+        const fontSize = Math.round(48 * 1.2);
+        const textLeft = SAFE_MARGIN;
+        const maxTextWidth = canvas.width - SAFE_MARGIN * 2;
+
+        // Posição do texto (subir conjunto ~270px)
+        let textStartY = canvas.height - (200 + 270) - 100;
+        if (textStartY < 120) textStartY = 120;
+
+        // Pré-calcular layout do texto (evita recálculo a cada frame!)
+        let precomputedLayout: TextLayout | null = null;
+        if (captionText) {
+          ctx.font = `800 ${fontSize}px Poppins, Arial, sans-serif`;
+          precomputedLayout = precomputeTextLayout(ctx, captionText, maxTextWidth, fontSize, textStartY, textLeft);
+        }
+
+        // Usar constantes centralizadas do módulo TIMING
+        const BAR_DURATION_MS = TIMING.BAR_DURATION_MS;
+        const POST_HOLD_MS = TIMING.POST_HOLD_MS;
+        const CHAR_TIME_MS = TIMING.CHAR_TIME_MS;
+
+        // Slide deve durar pelo menos: barra + texto + hold final
+        const minRequiredMs = calculateMinSlideDuration(captionText.length);
+        const durationMsEffective = Math.max(durationSecInput * 1000, minRequiredMs);
+        const totalFrames = Math.max(1, Math.round(durationMsEffective / FRAME_MS));
+        console.log(`📽️ Slide ${i + 1}: ${totalFrames} frames (${(durationMsEffective / 1000).toFixed(2)}s a ${FRAME_RATE}fps)`);
+
+        // Marcar tempo inicial do slide para cálculos de animação
+        const slideStartMs = frameTimer.getElapsedMs();
+
+        // Iniciar vídeo naturalmente (ao invés de seek por frame)
+        if (isVideo && videoEl) {
+          videoEl.currentTime = 0;
+          try { await videoEl.play(); } catch { }
+        }
+
         for (let frame = 0; frame < totalFrames; frame++) {
-          // Timing: baseado em tempo real e alvo de 30fps
+          // Timing: baseado em tempo real usando FrameTimer de alta precisão
           const targetMs = frame * FRAME_MS;
-          const elapsedMs = Math.max(0, Date.now() - slideStart);
+          const elapsedMs = Math.max(0, frameTimer.getElapsedMs() - slideStartMs);
           // Limpar canvas
           ctx.fillStyle = '#000000';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -933,7 +947,7 @@ const VideoSlidePage = () => {
             const t = (elapsedMs - lastStepAtMs) / 1000; // segundos após punch
             // micro variação de escala (bem sutil)
             const sOsc = dp.ampScale * Math.sin(2 * Math.PI * dp.f1 * t + dp.phase1)
-                        + (dp.ampScale * 0.5) * Math.sin(2 * Math.PI * dp.f2 * t + dp.phase2);
+              + (dp.ampScale * 0.5) * Math.sin(2 * Math.PI * dp.f2 * t + dp.phase2);
             // zoom extra de 3% para permitir pan sem risco de borda
             drawScale = baseSafeScale * 1.03 * (1 + sOsc);
           }
@@ -951,11 +965,11 @@ const VideoSlidePage = () => {
           let dx = 0, dy = 0;
           const slideAlignH = slide.alignH || 'center';
           const slideAlignV = slide.alignV || 'center';
-          if (slideAlignH === 'left') dx = 0; 
-          else if (slideAlignH === 'right') dx = canvas.width - drawW; 
+          if (slideAlignH === 'left') dx = 0;
+          else if (slideAlignH === 'right') dx = canvas.width - drawW;
           else dx = (canvas.width - drawW) / 2;
-          if (slideAlignV === 'top') dy = 0; 
-          else if (slideAlignV === 'bottom') dy = canvas.height - drawH; 
+          if (slideAlignV === 'top') dy = 0;
+          else if (slideAlignV === 'bottom') dy = canvas.height - drawH;
           else dy = (canvas.height - drawH) / 2;
           // Aplicar pan suave e aleatório somente após o punch (mantendo cobertura sem bordas)
           if (elapsedMs >= lastStepAtMs + 50) {
@@ -971,11 +985,9 @@ const VideoSlidePage = () => {
             dx = clamp(dx + shiftX, canvas.width - drawW, 0);
             dy = clamp(dy + shiftY, canvas.height - drawH, 0);
           }
-          // Avançar vídeo proporcional ao tempo, se for mídia de vídeo (seek por frame garante atualização)
+          // Renderizar mídia (vídeo já está tocando naturalmente, não precisamos de seek)
           if (isVideo && videoEl) {
-            const tSec = Math.min((isFinite(videoEl.duration) && videoEl.duration > 0) ? videoEl.duration : durationSecInput, elapsedMs / 1000);
-            try { videoEl.currentTime = tSec; lastVidTimeSet = tSec; } catch {}
-            try { ctx.drawImage(videoEl, dx, dy, drawW, drawH); } catch {}
+            try { ctx.drawImage(videoEl, dx, dy, drawW, drawH); } catch { }
           } else {
             ctx.drawImage(img, dx, dy, drawW, drawH);
           }
@@ -992,7 +1004,7 @@ const VideoSlidePage = () => {
               if (a > canvasAspect) { h = canvas.height; w = h * a; } else { w = canvas.width; h = w / a; }
               const px = (canvas.width - w) / 2;
               const py = (canvas.height - h) / 2;
-              try { ctx.drawImage(prevVid, px, py, w, h); } catch {}
+              try { ctx.drawImage(prevVid, px, py, w, h); } catch { }
             } else if (prevImg) {
               const a = prevImg.width / prevImg.height;
               let w, h;
@@ -1010,93 +1022,25 @@ const VideoSlidePage = () => {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalAlpha = 1.0;
           }
-          // CORRIGIDO: Linha amarela antes do texto + texto com typewriter
-          if (captionText) {
+          // R10-FIXPACK-002: Renderização otimizada de texto usando funções pré-calculadas
+          if (captionText && precomputedLayout) {
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            const SAFE_MARGIN = 50;
-            const fontSize = Math.round(48 * 1.2);
-            const textLeft = SAFE_MARGIN;
-            const barLeft = SAFE_MARGIN;
-            const maxTextWidth = canvas.width - SAFE_MARGIN * 2;
-            const BLOCK_GAP = 8; // espaçamento entre blocos vermelhos
-            // Posição do texto (subir conjunto ~270px)
-            let y = canvas.height - (200 + 270) - 100;
-            if (y < 120) y = 120;
-            // 1) Linha amarela animada (antes do texto)
-            const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-            const preLineDurationMs = BAR_DURATION_MS;
-            const preLineProgress = easeOutCubic(Math.min(1, elapsedMs / preLineDurationMs));
+
+            // 1) Barra amarela animada (antes do texto)
+            const barY = textStartY - Math.round(fontSize * 0.5) - 20;
             const yellowWidthTarget = Math.min(100, canvas.width - SAFE_MARGIN - textLeft);
-            const yellowWidth = Math.max(0, Math.floor(yellowWidthTarget * preLineProgress));
-            const yellowHeight = 15;
-            const yellowY = y - Math.round(fontSize * 0.5) - 20;
-            if (yellowWidth > 0) {
-              ctx.fillStyle = '#eebe32';
-              ctx.fillRect(barLeft, yellowY, yellowWidth, yellowHeight);
-            }
-            // 2) Texto com efeito typewriter em blocos vermelhos
-            ctx.font = `800 ${fontSize}px Poppins, Arial, sans-serif`;
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            // progresso do typewriter após a barra amarela
+            drawYellowBar(ctx, elapsedMs / BAR_DURATION_MS, SAFE_MARGIN, barY, yellowWidthTarget);
+
+            // 2) Texto typewriter usando layout pré-calculado (SEM recálculo de quebra de linha!)
             const startTextMs = BAR_DURATION_MS + 100;
             const progressedMs = Math.max(0, elapsedMs - startTextMs);
             const charsToShow = Math.min(captionText.length, Math.floor(progressedMs / CHAR_TIME_MS));
+
             if (charsToShow > 0) {
-              const textToDraw = captionText.slice(0, charsToShow);
-              // Quebra de linha por largura
-              const wrapByWidth = (text: string, maxW: number) => {
-                const hardLines = text.split(/\r?\n/);
-                const out: string[] = [];
-                for (const hard of hardLines) {
-                  const words = hard.split(/\s+/).filter(Boolean);
-                  let line = '';
-                  for (const w of words) {
-                    const test = line ? line + ' ' + w : w;
-                    if (ctx.measureText(test).width <= maxW) {
-                      line = test;
-                    } else {
-                      if (line) out.push(line);
-                      // palavra muito grande: quebra forçada se necessário
-                      if (ctx.measureText(w).width > maxW) {
-                        let acc = '';
-                        for (const ch of w) {
-                          const testCh = acc + ch;
-                          if (ctx.measureText(testCh).width <= maxW) acc = testCh; else { out.push(acc); acc = ch; }
-                        }
-                        line = acc;
-                      } else {
-                        line = w;
-                      }
-                    }
-                  }
-                  if (line) out.push(line);
-                }
-                return out;
-              };
-              const lines = wrapByWidth(textToDraw, maxTextWidth);
-              // métricas dos blocos
-              const blockPadX = 18;
-              const blockPadY = 12;
-              const blockHeight = fontSize + blockPadY * 2;
-              let yCursor = y;
-              for (const line of lines) {
-                const lineW = Math.ceil(ctx.measureText(line).width);
-                const rectX = textLeft - blockPadX;
-                const rectY = yCursor;
-                const rectW = Math.min(maxTextWidth + blockPadX * 2, lineW + blockPadX * 2);
-                const rectH = blockHeight;
-                // bloco vermelho
-                ctx.fillStyle = '#DC2626';
-                ctx.fillRect(rectX, rectY, rectW, rectH);
-                // texto branco centralizado verticalmente no bloco
-                ctx.fillStyle = '#FFFFFF';
-                const textY = rectY + blockPadY; // baseline top + padding
-                ctx.fillText(line, textLeft, textY);
-                yCursor += rectH + BLOCK_GAP;
-              }
+              drawTypewriterFrame(ctx, precomputedLayout, charsToShow, fontSize, textLeft);
             }
+
             ctx.restore();
           }
           // CORRIGIDO: Marca d'água NO TOPO DIREITO (não embaixo) e mais visível
@@ -1117,10 +1061,8 @@ const VideoSlidePage = () => {
           }
           // Sinalizar frame ao track (quando suportado) para capturar frame
           requestFrameIfSupported();
-          // Pacing para 30fps
-          const now = Date.now() - slideStart;
-          const delay = Math.max(0, targetMs - now);
-          if (delay > 0) await sleep(delay);
+          // Pacing preciso para 30fps usando FrameTimer
+          await frameTimer.waitForNextFrame(frame + 1);
         }
       }
       // Calcular duração total do vídeo (para referência)
@@ -1137,7 +1079,7 @@ const VideoSlidePage = () => {
         console.log('🎬 Iniciando renderização da vinheta final...');
         // 1) Se houver trilha sonora tocando, parar ao iniciar vinheta
         if (audioElement) {
-          try { audioElement.pause(); } catch {}
+          try { audioElement.pause(); } catch { }
         }
         // 2) Conectar áudio da vinheta ao stream principal
         try {
@@ -1155,9 +1097,9 @@ const VideoSlidePage = () => {
         }
         const vinheteFrames = Math.round((endingDurationMs / 1000) * FRAME_RATE);
         vinheteVideo.currentTime = 0;
-        try { await vinheteVideo.play(); } catch {}
-  const vinheteStart = Date.now();
-  for (let frame = 0; frame < vinheteFrames; frame++) {
+        try { await vinheteVideo.play(); } catch { }
+        const vinheteStart = Date.now();
+        for (let frame = 0; frame < vinheteFrames; frame++) {
           // Limpar canvas
           ctx.fillStyle = '#000000';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1198,12 +1140,10 @@ const VideoSlidePage = () => {
             ctx.restore();
           }
           requestFrameIfSupported();
-          const now = Date.now() - vinheteStart;
-          const targetMs = frame * FRAME_MS;
-          const delay = Math.max(0, targetMs - now);
-          if (delay > 0) await sleep(delay);
+          // Pacing preciso para 30fps
+          await frameTimer.waitForNextFrame(frame + 1);
         }
-  // Parar vídeo da vinheta se estava rodando
+        // Parar vídeo da vinheta se estava rodando
         if (vinheteVideo) {
           vinheteVideo.pause();
           vinheteVideo.currentTime = 0;
@@ -1220,7 +1160,7 @@ const VideoSlidePage = () => {
         if (audioContext) {
           await audioContext.close();
         }
-      } catch {}
+      } catch { }
       mediaRecorder.stop();
     } catch (error) {
       console.error('Erro ao gerar vídeo:', error);
@@ -1236,7 +1176,7 @@ const VideoSlidePage = () => {
           <img src="/r10studio.png" alt="R10 STUDIO" className="h-24 object-contain" />
         </div>
         <div className="flex justify-center">
-        {/* Settings de watermark/vinheta não exibidos no editor para manter fluxo limpo */}
+          {/* Settings de watermark/vinheta não exibidos no editor para manter fluxo limpo */}
         </div>
       </div>
       {/* Título (compacto) */}
@@ -1246,7 +1186,7 @@ const VideoSlidePage = () => {
             <Label className="text-xs text-muted-foreground">Título</Label>
             <Input
               value={title}
-              onChange={(e)=>setTitle(e.target.value)}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="Opcional"
               className="h-8 text-sm max-w-md"
             />
@@ -1257,9 +1197,8 @@ const VideoSlidePage = () => {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                slides.length > 0 ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
-              }`}>2</div>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${slides.length > 0 ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
+                }`}>2</div>
               Imagens da Reportagem ({slides.length}/20)
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">Selecione múltiplas imagens de uma vez</p>
@@ -1277,7 +1216,7 @@ const VideoSlidePage = () => {
               className="hidden"
               id="add-multiple-images"
             />
-            <Button 
+            <Button
               asChild
               variant="accent"
               size="sm"
@@ -1309,7 +1248,7 @@ const VideoSlidePage = () => {
                 <select
                   id="all-effect-select"
                   value={bulkEffectValue}
-                  onChange={(e)=>setBulkEffectValue(e.target.value)}
+                  onChange={(e) => setBulkEffectValue(e.target.value)}
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                 >
                   {zoomEffects.map(effect => (
@@ -1327,15 +1266,15 @@ const VideoSlidePage = () => {
                 >Aplicar efeito a todos</Button>
                 <input
                   value={bulkTextValue}
-                  onChange={(e)=>setBulkTextValue(e.target.value)}
+                  onChange={(e) => setBulkTextValue(e.target.value)}
                   placeholder="Texto para todos os slides"
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm w-64"
                 />
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={()=>{
-                    setSlides(prev=>prev.map(s=>({ ...s, caption: bulkTextValue })));
+                  onClick={() => {
+                    setSlides(prev => prev.map(s => ({ ...s, caption: bulkTextValue })));
                     toast.success('Texto aplicado a todos os slides');
                   }}
                 >Aplicar texto a todos</Button>
@@ -1362,7 +1301,7 @@ const VideoSlidePage = () => {
             </div>
           )}
           {slides.length === 0 ? (
-            <div 
+            <div
               className="text-center py-16 text-muted-foreground border-2 border-dashed border-orange-400/30 rounded-lg hover:border-orange-400/50 transition-colors bg-gradient-to-b from-orange-50/20 to-red-50/20"
               onDragOver={handleDragOver}
               onDragEnter={handleDragEnter}
@@ -1552,25 +1491,25 @@ const VideoSlidePage = () => {
                             <div className="mt-1 inline-flex rounded-md overflow-hidden border">
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignH||'center')==='left' ? 'bg-primary/10' : 'bg-background' }`}
+                                className={`px-2 py-1 ${(slide.alignH || 'center') === 'left' ? 'bg-primary/10' : 'bg-background'}`}
                                 title="Esquerda"
-                                onClick={()=>updateSlide(slide.id, 'alignH', 'left')}
+                                onClick={() => updateSlide(slide.id, 'alignH', 'left')}
                               >
                                 <AlignLeft className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignH||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                className={`px-2 py-1 ${(slide.alignH || 'center') === 'center' ? 'bg-primary/10' : 'bg-background'} border-l`}
                                 title="Centro"
-                                onClick={()=>updateSlide(slide.id, 'alignH', 'center')}
+                                onClick={() => updateSlide(slide.id, 'alignH', 'center')}
                               >
                                 <AlignCenter className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignH||'center')==='right' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                className={`px-2 py-1 ${(slide.alignH || 'center') === 'right' ? 'bg-primary/10' : 'bg-background'} border-l`}
                                 title="Direita"
-                                onClick={()=>updateSlide(slide.id, 'alignH', 'right')}
+                                onClick={() => updateSlide(slide.id, 'alignH', 'right')}
                               >
                                 <AlignRight className="w-4 h-4" />
                               </button>
@@ -1581,25 +1520,25 @@ const VideoSlidePage = () => {
                             <div className="mt-1 inline-flex rounded-md overflow-hidden border">
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignV||'center')==='top' ? 'bg-primary/10' : 'bg-background' }`}
+                                className={`px-2 py-1 ${(slide.alignV || 'center') === 'top' ? 'bg-primary/10' : 'bg-background'}`}
                                 title="Topo"
-                                onClick={()=>updateSlide(slide.id, 'alignV', 'top')}
+                                onClick={() => updateSlide(slide.id, 'alignV', 'top')}
                               >
                                 <ArrowUp className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignV||'center')==='center' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                className={`px-2 py-1 ${(slide.alignV || 'center') === 'center' ? 'bg-primary/10' : 'bg-background'} border-l`}
                                 title="Centro"
-                                onClick={()=>updateSlide(slide.id, 'alignV', 'center')}
+                                onClick={() => updateSlide(slide.id, 'alignV', 'center')}
                               >
                                 <AlignCenter className="w-4 h-4 rotate-90" />
                               </button>
                               <button
                                 type="button"
-                                className={`px-2 py-1 ${ (slide.alignV||'center')==='bottom' ? 'bg-primary/10' : 'bg-background' } border-l`}
+                                className={`px-2 py-1 ${(slide.alignV || 'center') === 'bottom' ? 'bg-primary/10' : 'bg-background'} border-l`}
                                 title="Base"
-                                onClick={()=>updateSlide(slide.id, 'alignV', 'bottom')}
+                                onClick={() => updateSlide(slide.id, 'alignV', 'bottom')}
                               >
                                 <ArrowDown className="w-4 h-4" />
                               </button>
@@ -1625,32 +1564,32 @@ const VideoSlidePage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label className="text-xs">Link da matéria (opcional)</Label>
-              <Input value={articleUrl} onChange={(e)=>setArticleUrl(e.target.value)} placeholder="https://..." />
+              <Input value={articleUrl} onChange={(e) => setArticleUrl(e.target.value)} placeholder="https://..." />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Ou texto bruto (opcional)</Label>
-              <Textarea value={articleText} onChange={(e)=>setArticleText(e.target.value)} placeholder="Cole o texto aqui..." className="min-h-[90px]" />
+              <Textarea value={articleText} onChange={(e) => setArticleText(e.target.value)} placeholder="Cole o texto aqui..." className="min-h-[90px]" />
             </div>
           </div>
           <div className="flex gap-2">
-      <Button size="sm" onClick={async()=>{
+            <Button size="sm" onClick={async () => {
               if (!articleUrl && !articleText.trim()) {
                 toast.error('Informe o link ou cole o texto.');
                 return;
               }
               try {
                 setIsExtracting(true);
-        const result = await extractFromUrlOrText({ url: articleUrl || undefined, text: articleText || undefined, maxSeconds: 90 });
+                const result = await extractFromUrlOrText({ url: articleUrl || undefined, text: articleText || undefined, maxSeconds: 90 });
                 setExtraction(result);
                 toast.success('Texto segmentado com sucesso.');
-              } catch (e:any) {
+              } catch (e: any) {
                 toast.error('Falha ao extrair/segmentar.');
               } finally {
                 setIsExtracting(false);
               }
             }} disabled={isExtracting}>{isExtracting ? 'Processando...' : 'Analisar'}</Button>
             {extraction && (
-              <Button size="sm" variant="outline" onClick={()=>{
+              <Button size="sm" variant="outline" onClick={() => {
                 // Popular texto dos slides com os blocos segmentados
                 const segs = extraction.segments || [];
                 if (segs.length === 0) return;
@@ -1658,7 +1597,7 @@ const VideoSlidePage = () => {
                 const limited = segs.slice(0, 20);
                 const ensureSlides = Math.max(slides.length, limited.length);
                 const next: Slide[] = [];
-                for (let i=0;i<ensureSlides;i++) {
+                for (let i = 0; i < ensureSlides; i++) {
                   const existing = slides[i];
                   const caption = limited[i]?.text || existing?.caption || '';
                   if (existing) next.push({ ...existing, caption });
@@ -1673,7 +1612,7 @@ const VideoSlidePage = () => {
             <div className="mt-2 p-2 border rounded">
               <div className="text-sm font-medium">Sugestão de imagens: {extraction.suggestedImages}</div>
               <ul className="list-disc pl-4 text-sm mt-2 space-y-1">
-                {extraction.segments.map((s, idx)=> (
+                {extraction.segments.map((s, idx) => (
                   <li key={idx} className="leading-snug">{s.text}</li>
                 ))}
               </ul>
@@ -1707,15 +1646,15 @@ const VideoSlidePage = () => {
                       placeholder="Senha"
                       type="password"
                       value={protectedInput}
-                      onChange={(e)=>setProtectedInput(e.target.value)}
+                      onChange={(e) => setProtectedInput(e.target.value)}
                       className="h-8 text-sm w-32"
                     />
                     <Button
                       size="sm"
-                      onClick={()=>{
+                      onClick={() => {
                         if (protectedInput === '850327') {
                           setProtectedUnlocked(true);
-                          try { localStorage.setItem('r10-protected','1'); } catch {}
+                          try { localStorage.setItem('r10-protected', '1'); } catch { }
                           toast.success('Área Protegida desbloqueada');
                         } else {
                           toast.error('Senha incorreta');
@@ -1726,9 +1665,9 @@ const VideoSlidePage = () => {
                 ) : (
                   <div className="flex items-center gap-2">
                     <span className="text-green-600 text-sm">✅ Desbloqueada</span>
-                    <Button size="sm" variant="ghost" onClick={()=>{
+                    <Button size="sm" variant="ghost" onClick={() => {
                       setProtectedUnlocked(false);
-                      try { localStorage.removeItem('r10-protected'); } catch {}
+                      try { localStorage.removeItem('r10-protected'); } catch { }
                     }}>Bloquear</Button>
                   </div>
                 )}
@@ -1742,7 +1681,7 @@ const VideoSlidePage = () => {
                       <Input
                         placeholder="/caminho/para/logo.png"
                         value={watermark.file}
-                        onChange={(e)=>handleWatermarkChange(e.target.value)}
+                        onChange={(e) => handleWatermarkChange(e.target.value)}
                         className="h-8 text-sm"
                       />
                     </div>
@@ -1769,7 +1708,7 @@ const VideoSlidePage = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={()=>{
+                          onClick={() => {
                             try {
                               const url = endingVideoUrl;
                               if (url) {
@@ -1780,7 +1719,7 @@ const VideoSlidePage = () => {
                               } else {
                                 toast.error('Envie um vídeo de vinheta primeiro');
                               }
-                            } catch {}
+                            } catch { }
                           }}
                         >Salvar</Button>
                       )}
@@ -1841,11 +1780,10 @@ const VideoSlidePage = () => {
                 {predefinedAudios.map((audio) => (
                   <div
                     key={audio.id}
-                    className={`p-3 border rounded-lg transition-all ${
-                      selectedAudioId === audio.id 
-                        ? 'border-blue-400 bg-blue-50/50 shadow-sm' 
-                        : 'border-border hover:border-blue-300 hover:bg-blue-50/20'
-                    }`}
+                    className={`p-3 border rounded-lg transition-all ${selectedAudioId === audio.id
+                      ? 'border-blue-400 bg-blue-50/50 shadow-sm'
+                      : 'border-border hover:border-blue-300 hover:bg-blue-50/20'
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <button
@@ -1948,7 +1886,7 @@ const VideoSlidePage = () => {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={()=>{
+                    onClick={() => {
                       try {
                         const url = endingVideoUrl;
                         if (url) {
@@ -1959,7 +1897,7 @@ const VideoSlidePage = () => {
                         } else {
                           toast.error('Envie um vídeo de vinheta primeiro');
                         }
-                      } catch {}
+                      } catch { }
                     }}
                   >Salvar como padrão</Button>
                 )}
@@ -1999,9 +1937,8 @@ const VideoSlidePage = () => {
         )}
         <div className="p-8 bg-gradient-to-r from-orange-50/50 to-red-50/50 rounded-xl border border-orange-200/50">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              title && slides.length > 0 ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
-            }`}>3</div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${title && slides.length > 0 ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
+              }`}>3</div>
             <h3 className="text-xl font-semibold">Gerar Vídeo Profissional</h3>
           </div>
           {slides.length > 0 ? (
